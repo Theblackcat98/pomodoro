@@ -1,0 +1,101 @@
+# UI Component API Contract
+
+## Overview
+
+This document defines the API contracts for UI components in the Pomodoro application with enhanced layout and styling.
+
+## Component: Tab Navigation
+
+### Definition
+A tab component that allows switching between different views (Timer, Tasks, Settings).
+
+### Properties
+- `ID`: String identifier for the tab (e.g., "timer", "tasks", "settings")
+- `Title`: Display text for the tab
+- `IsActive`: Boolean indicating if this is the currently selected tab
+- `ViewFunction`: Function to render the content when this tab is active
+
+### Events
+- `TabSelected`: Emitted when a tab is selected by the user
+  - Payload: `{ tabId: string }`
+
+### Methods
+- `Select()`: Marks the tab as active and triggers the TabSelected event
+- `Render()`: Returns the styled string for rendering the tab
+
+## Component: Style Manager
+
+### Definition
+Centralized manager for lipgloss style definitions used throughout the application.
+
+### Properties
+- `ActiveTabStyle`: Style for the currently active tab
+- `InactiveTabStyle`: Style for inactive tabs
+- `HeaderStyle`: Style for the header section
+- `ContentStyle`: Style for the main content area
+- `StatusBarStyle`: Style for the status bar
+- `BorderStyle`: Style for borders around components
+
+### Methods
+- `ApplyTo(content: string, styleType: string)`: Applies the specified style to content
+- `UpdateStyle(styleType: string, newStyle: lipgloss.Style)`: Updates a specific style
+
+## Component: Layout Manager
+
+### Definition
+Component responsible for calculating and managing responsive layout based on terminal dimensions.
+
+### Properties
+- `WindowWidth`: Current terminal width
+- `WindowHeight`: Current terminal height
+- `HeaderHeight`: Calculated height for header section
+- `ContentHeight`: Calculated height for content area
+- `StatusBarHeight`: Calculated height for status bar
+
+### Events
+- `LayoutChanged`: Emitted when terminal is resized
+  - Payload: `{ width: number, height: number }`
+
+### Methods
+- `CalculateLayout()`: Recalculates component dimensions based on terminal size
+- `GetWidthFor(component: string)`: Returns recommended width for the component
+- `GetHeightFor(component: string)`: Returns recommended height for the component
+
+## Component: Status Bar
+
+### Definition
+Information display at the bottom of the screen showing current status and key bindings.
+
+### Properties
+- `StatusText`: Current status message (e.g., "Running", "Paused")
+- `KeyBindings`: List of available key bindings and their descriptions
+- `SessionInfo`: Current session information (e.g., "Pomodoro 1/4")
+
+### Events
+- `StatusChanged`: Emitted when status information changes
+  - Payload: `{ status: string }`
+
+### Methods
+- `UpdateStatus(newStatus: string)`: Updates the status text
+- `Render()`: Returns the styled string for rendering the status bar
+
+## Component: Main Application View
+
+### Definition
+The main view that orchestrates all UI components into a cohesive layout.
+
+### Properties
+- `ActiveTab`: Currently selected tab
+- `Tabs`: Array of available tabs
+- `HeaderContent`: Content for the header section
+- `MainContent`: Content for the main area based on active tab
+- `StatusBar`: Status bar component instance
+
+### Events
+- `ViewChanged`: Emitted when the main view changes
+  - Payload: `{ viewType: string }`
+
+### Methods
+- `SwitchTab(tabId: string)`: Switches to the specified tab
+- `Render()`: Returns the complete UI layout as a string
+- `HandleResize(width: number, height: number)`: Updates layout for new terminal dimensions

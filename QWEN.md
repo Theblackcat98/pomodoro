@@ -3,6 +3,7 @@
 Auto-generated from all feature plans. Last updated: 2025-11-15
 
 ## Active Technologies
+- Files (for saving settings, history, tasks) (2-UI-Layout)
 
 - Go 1.21+ (required for Bubble Tea framework) (1-main-timer)
 
@@ -22,6 +23,7 @@ tests/
 Go 1.21+ (required for Bubble Tea framework): Follow standard conventions
 
 ## Recent Changes
+- 2-UI-Layout: Added Go 1.21+ (required for Bubble Tea framework)
 
 - 1-main-timer: Added Go 1.21+ (required for Bubble Tea framework)
 
