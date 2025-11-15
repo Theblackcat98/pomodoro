@@ -44,6 +44,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Height = msg.Height
 	}
 
+	// Update the model based on session status changes
+	// For now, we'll just return the model as is
 	return m, nil
 }
 
