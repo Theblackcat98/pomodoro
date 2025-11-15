@@ -1,50 +1,43 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!-- 
+Sync Impact Report:
+- Version change: N/A (initial version) → 1.0.0
+- Added principles: TUI-First Interface, Pomodoro Method Foundation, Complete Component Integration, Terminal Native Experience, Extensibility and Customization
+- Added sections: Technical Requirements, Development Workflow
+- Templates requiring updates: 
+  - .specify/templates/plan-template.md (Constitution Check section needs to reflect new principles) - ⚠ pending
+  - .specify/templates/spec-template.md (may need alignment with new constraints) - ⚠ pending
+  - .specify/templates/tasks-template.md (task categorization may need to reflect new principles) - ⚠ pending
+- Follow-up TODOs: None
+-->
+# Pomodoro TUI App Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### TUI-First Interface
+The application must start with and prioritize a terminal user interface using Bubble Tea framework; All functionality must be accessible and intuitive in a text-based terminal environment; UI components must be responsive and visually appealing using Lipgloss styling.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### Pomodoro Method Foundation
+The application must strictly adhere to the Pomodoro Technique methodology; Work sessions must be 25 minutes, short breaks 5 minutes, and long breaks 15 minutes after 4 cycles; Timer functionality must be accurate and reliable.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### Complete Component Integration (NON-NEGOTIABLE)
+Every UI component from the Bubbles library must be integrated into the application; Components like timer, stopwatch, progress bars, lists, etc. must be used meaningfully in the Pomodoro workflow; Each component must enhance user experience in the Pomodoro process.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### Terminal Native Experience
+The application must feel native to the terminal environment; Keyboard navigation must be intuitive with proper keybinding support; All terminal sizes should be supported with responsive design principles.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### Extensibility and Customization
+Users should be able to customize Pomodoro intervals, themes, and notification settings; The application should be extensible for additional features while maintaining simplicity.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Technical Requirements
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+Built with Go programming language; Uses Bubble Tea framework for TUI; Uses Lipgloss for styling; Uses Bubbles components for UI elements; Optionally integrates Glow for markdown rendering; Follows Go best practices and idioms.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Development Workflow
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+All UI components must be tested with various terminal types and sizes; TDD approach for all functionality; Code reviews must ensure UI consistency and accessibility; Performance optimization for terminal responsiveness.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+All PRs/reviews must verify compliance with all 5 core principles; Code changes must not break TUI-first approach; New features must integrate with Pomodoro methodology; Use constitution.md for runtime development guidance.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2025-11-15 | **Last Amended**: 2025-11-15
