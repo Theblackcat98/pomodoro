@@ -1,30 +1,52 @@
 package views
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"pomodoro/src/models"
+)
 
-// App represents the main application model
-type App struct {
-	mainView *MainView
+type Model struct {
+	Session models.TimerSession
+	CurrentView string
+	Width int
+	Height int
 }
 
-// NewApp creates a new instance of the application
-func NewApp() *App {
-	return &App{
-		mainView: NewMainView(),
+func InitialModel() Model {
+	return Model{
+		Session: models.TimerSession{},
+		CurrentView: "timer", // Default to timer view
+		Width: 80,
+		Height: 24,
 	}
 }
 
-// Init is the initial command for the application
-func (a *App) Init() tea.Cmd {
-	return a.mainView.Init()
+func (m Model) Init() tea.Cmd {
+	return nil
 }
 
-// Update handles messages and updates the application state
-func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return a.mainView.Update(msg)
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "tab":
+			// Switch between views
+			if m.CurrentView == "timer" {
+				m.CurrentView = "tasks"
+			} else {
+				m.CurrentView = "timer"
+			}
+		}
+	case tea.WindowSizeMsg:
+		m.Width = msg.Width
+		m.Height = msg.Height
+	}
+
+	return m, nil
 }
 
-// View returns the current view as a string
-func (a *App) View() string {
-	return a.mainView.View()
+func (m Model) View() string {
+	return m.MainView()
 }

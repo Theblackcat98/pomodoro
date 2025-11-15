@@ -1,6 +1,6 @@
 # Implementation Plan: Complete Bubbles Component Integration
 
-**Branch**: `1-main-timer` | **Date**: 2025-11-15 | **Spec**: [link to spec.md]
+**Branch**: `1-main-timer` | **Date**: 2025-11-15 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/1-main-timer/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
@@ -12,7 +12,7 @@ Create a comprehensive Pomodoro TUI application that integrates every UI compone
 ## Technical Context
 
 **Language/Version**: Go 1.21+ (required for Bubble Tea framework)
-**Primary Dependencies**: 
+**Primary Dependencies**:
 - Bubble Tea (main TUI framework)
 - Lipgloss (styling and layout)
 - Bubbles (all UI components including spinner, text input, text area, table, progress, paginator, viewport, list, file picker, timer, stopwatch, help, key bindings)

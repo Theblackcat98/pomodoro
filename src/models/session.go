@@ -1,11 +1,9 @@
 package models
 
-import (
-	"time"
-)
+import "time"
 
-// SessionType represents the type of Pomodoro session
 type SessionType string
+type SessionStatus string
 
 const (
 	FocusSession SessionType = "focus"
@@ -13,16 +11,12 @@ const (
 	LongBreak    SessionType = "long_break"
 )
 
-// SessionStatus represents the current status of a session
-type SessionStatus string
-
 const (
 	Running   SessionStatus = "running"
 	Paused    SessionStatus = "paused"
 	Completed SessionStatus = "completed"
 )
 
-// TimerSession represents a single Pomodoro session
 type TimerSession struct {
 	ID          string        `json:"id"`
 	Type        SessionType   `json:"type"`      // Focus, ShortBreak, LongBreak

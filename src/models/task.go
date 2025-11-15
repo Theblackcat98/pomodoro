@@ -1,10 +1,7 @@
 package models
 
-import (
-	"time"
-)
+import "time"
 
-// TaskStatus represents the current status of a task
 type TaskStatus string
 
 const (
@@ -13,7 +10,6 @@ const (
 	DoneStatus     TaskStatus = "done"
 )
 
-// Task represents a task that can be associated with Pomodoro sessions
 type Task struct {
 	ID                   string         `json:"id"`
 	Title                string         `json:"title"`

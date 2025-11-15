@@ -47,7 +47,7 @@ Enumeration for session types
 type SessionType string
 const (
     FocusSession SessionType = "focus"
-    ShortBreak   SessionType = "short_break" 
+    ShortBreak   SessionType = "short_break"
     LongBreak    SessionType = "long_break"
 )
 ```
@@ -172,7 +172,7 @@ const (
 ### TimerSession State Machine
 ```
 Created → Running (start timer)
-Running → Paused (pause timer)  
+Running → Paused (pause timer)
 Paused → Running (resume timer)
 Running → Completed (timer finishes)
 Paused → Completed (user completes manually)

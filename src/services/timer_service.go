@@ -1,28 +1,59 @@
 package services
 
 import (
-	"pomodoro/src/models"
 	"time"
+	"pomodoro/src/models"
 )
 
-// TimerService interface manages the core timing functionality for Pomodoro sessions
-type TimerService interface {
-	StartSession(sessionType models.SessionType) error
-	PauseSession() error
-	ResumeSession() error
-	StopSession() error
-	GetCurrentSession() *models.TimerSession
-	GetRemainingTime() time.Duration
-	RegisterObserver(observer TimerObserver)
-	UnregisterObserver(observer TimerObserver)
+type TimerService struct {
+	Session *models.TimerSession
+	ticker  *time.Ticker
+	done    chan bool
 }
 
-// TimerObserver interface defines the observer pattern for timer events
-type TimerObserver interface {
-	OnTimerTick(remaining time.Duration)
-	OnSessionStarted(session *models.TimerSession)
-	OnSessionPaused(session *models.TimerSession)
-	OnSessionResumed(session *models.TimerSession)
-	OnSessionCompleted(session *models.TimerSession)
-	OnSessionCancelled(session *models.TimerSession)
+func NewTimerService(sessionType models.SessionType, duration time.Duration) *TimerService {
+	session := models.TimerSession{
+		Type:      sessionType,
+		Duration:  duration,
+		Remaining: duration,
+		Status:    models.Running,
+		CreatedAt: time.Now(),
+		StartTime: &time.Time{},
+	}
+	
+	return &TimerService{
+		Session: &session,
+		ticker:  time.NewTicker(1 * time.Second),
+		done:    make(chan bool),
+	}
+}
+
+func (ts *TimerService) Start() {
+	*ts.Session.StartTime = time.Now()
+	ts.Session.Status = models.Running
+}
+
+func (ts *TimerService) Pause() {
+	ts.Session.Status = models.Paused
+}
+
+func (ts *TimerService) Stop() {
+	now := time.Now()
+	ts.Session.CompletedAt = &now
+	ts.Session.Status = models.Completed
+	ts.ticker.Stop()
+}
+
+func (ts *TimerService) Update() {
+	if ts.Session.Status == models.Running && ts.Session.Remaining > 0 {
+		ts.Session.Remaining -= time.Second
+		if ts.Session.Remaining <= 0 {
+			ts.Session.Remaining = 0
+			ts.Stop()
+		}
+	}
+}
+
+func (ts *TimerService) GetSession() *models.TimerSession {
+	return ts.Session
 }

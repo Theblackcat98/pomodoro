@@ -1,10 +1,7 @@
 package models
 
-import (
-	"time"
-)
+import "time"
 
-// NotificationType represents the type of notification
 type NotificationType string
 
 const (
@@ -14,7 +11,6 @@ const (
 	SilentNotification  NotificationType = "silent"
 )
 
-// Settings represents user preferences for the Pomodoro experience
 type Settings struct {
 	ID                   string           `json:"id"`
 	FocusDuration        time.Duration    `json:"focus_duration"`        // Default: 25 minutes
