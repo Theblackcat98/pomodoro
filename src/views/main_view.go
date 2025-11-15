@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"github.com/charmbracelet/lipgloss"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var (
