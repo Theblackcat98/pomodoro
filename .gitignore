@@ -1,0 +1,49 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build artifacts
+bin/
+dist/
+build/
+
+# Go
+*.test
+*.prof
+coverage.out
+coverage.html
+
+# Dependency directories (change to submodules if you use them)
+vendor/
+
+# Debug
+debug/
+
+# Logs
+*.log
+
+# Environment specific
+.env*
+*.env
+.env.local
+.env.dev
+.env.testing
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.history/
+.atom/
