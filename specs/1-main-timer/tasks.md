@@ -27,9 +27,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per implementation plan in src/
-- [ ] T002 Initialize Go project with Bubble Tea, Lipgloss, Bubbles, and Glow dependencies in go.mod
-- [ ] T003 [P] Configure Go module, testing framework, and formatting tools
+Tasks filed as GitHub Issues #1–#101.
 
 ---
 
@@ -39,15 +37,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 [P] Create TimerSession model in src/models/session.go
-- [ ] T005 [P] Create Settings model in src/models/settings.go
-- [ ] T006 [P] Create Task model in src/models/task.go
-- [ ] T007 Create TimerService interface in src/services/timer_service.go
-- [ ] T008 Implement TimerService with Pomodoro logic in src/services/concrete_timer_service.go
-- [ ] T009 [P] Create PersistenceService interface in src/services/persistence.go
-- [ ] T010 Create basic Bubble Tea application structure in src/views/app.go
-- [ ] T011 Create main application entry point in cmd/main.go
-- [ ] T012 Create event message types for Bubble Tea in src/models/messages.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -61,14 +51,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 ### Implementation for User Story 1
 
-- [ ] T013 [P] Create main timer component using Bubbles timer in src/components/timer.go
-- [ ] T014 Create visual timer display with circular progress in src/components/timer_display.go
-- [ ] T015 Implement START/PAUSE button functionality in src/components/timer_control.go
-- [ ] T016 Integrate timer service with UI to show "Focus" or "Break" mode
-- [ ] T017 Add visual ring that closes as time passes using Lipgloss styling
-- [ ] T018 Display large, clear digits counting down the remaining time
-- [ ] T019 [US1] Implement end-of-session notification with sound/visual indicator
-- [ ] T020 [US1] Write unit tests for timer functionality in tests/unit/timer_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -82,13 +65,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 ### Implementation for User Story 2
 
-- [ ] T021 Create task list component using Bubbles list in src/components/task_list.go
-- [ ] T022 Implement task creation UI using Bubbles text input in src/components/task_input.go
-- [ ] T023 Implement task description editor using Bubbles text area in src/components/task_description.go
-- [ ] T024 Connect task list to task models and persistence
-- [ ] T025 Add ability to mark tasks as done via the list component
-- [ ] T026 Add task filtering and sorting capabilities
-- [ ] T027 [US2] Write unit tests for task management functionality in tests/unit/task_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -102,13 +79,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 ### Implementation for User Story 3
 
-- [ ] T028 Create settings view using multiple Bubbles components in src/components/settings_view.go
-- [ ] T029 Implement duration customization controls in src/components/duration_settings.go
-- [ ] T030 Implement theme selection using Bubbles list in src/components/theme_selector.go
-- [ ] T031 Create notification preferences UI in src/components/notification_settings.go
-- [ ] T032 Add auto-start preferences for breaks and focus sessions
-- [ ] T033 Connect settings to Settings model and persistence
-- [ ] T034 [US3] Write unit tests for settings functionality in tests/unit/settings_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -122,12 +93,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 ### Implementation for User Story 4
 
-- [ ] T035 Create session history table using Bubbles table component in src/components/history.go
-- [ ] T036 Connect table to session data from persistence
-- [ ] T037 Add filtering and sorting capabilities to session history
-- [ ] T038 Create statistics view showing completed sessions metrics
-- [ ] T039 Add export functionality using Bubbles file picker in src/components/export.go
-- [ ] T040 [US4] Write unit tests for history and statistics in tests/unit/history_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -139,14 +105,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 ### Implementation
 
-- [ ] T041 Create stopwatch view using Bubbles stopwatch component in src/components/stopwatch.go
-- [ ] T042 Implement help view using Bubbles help component in src/components/help_view.go
-- [ ] T043 Create key binding management using Bubbles key component in src/components/key_bindings.go
-- [ ] T044 Add pagination to lists using Bubbles paginator in src/components/paginator.go
-- [ ] T045 Implement scrollable content areas using Bubbles viewport in src/components/viewport.go
-- [ ] T046 Add loading indicators using Bubbles spinner in src/components/spinner.go
-- [ ] T047 [P] Create markdown help viewer using Glow component in src/components/glow_help.go
-- [ ] T048 [P5] Write unit tests for advanced UI components in tests/unit/ui_components_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: All Bubbles components are now integrated meaningfully
 
@@ -158,12 +117,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 ### Implementation
 
-- [ ] T049 Compose main application view using all implemented components in src/views/main_view.go
-- [ ] T050 Implement navigation between different views (timer, tasks, settings, history)
-- [ ] T051 Add status bar with current mode and session statistics
-- [ ] T052 Create tab-based navigation system
-- [ ] T053 Integrate all key bindings for navigation
-- [ ] T054 [P] Write integration tests for full application flow in tests/integration/app_flow_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: Complete application with all features integrated
 
@@ -173,15 +127,7 @@ description: "Task list for Complete Bubbles Component Integration feature"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T055 [P] Documentation updates in docs/
-- [ ] T056 Code cleanup and refactoring
-- [ ] T057 Performance optimization across all stories
-- [ ] T058 [P] Additional unit tests in tests/unit/
-- [ ] T059 Implement error handling and graceful degradation
-- [ ] T060 Run quickstart.md validation
-- [ ] T061 [P] End-to-end tests for complete user workflows in tests/e2e/
-- [ ] T062 Add keyboard navigation throughout the app
-- [ ] T063 Theme consistency across all components
+Tasks filed as GitHub Issues #1–#101.
 
 ---
 
