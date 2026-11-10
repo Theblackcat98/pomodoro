@@ -27,9 +27,7 @@ description: "Task list for UI Layout improvements feature"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per implementation plan in specs/2-UI-Layout/
-- [ ] T002 [P] Update existing Go project with any necessary Lip Gloss dependencies in go.mod
-- [ ] T003 [P] Set up testing framework for UI components in tests/
+Tasks filed as GitHub Issues #1–#101.
 
 ---
 
@@ -39,11 +37,7 @@ description: "Task list for UI Layout improvements feature"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Create style definitions in src/views/styles.go following lipgloss example patterns
-- [ ] T005 [P] Create tab component using lipgloss styling in src/components/tab.go
-- [ ] T006 [P] Create layout utility functions in src/utils/layout.go for responsive design
-- [ ] T007 Update existing models to support new UI features in src/views/app.go
-- [ ] T008 Define global style variables for consistent theming in src/views/styles.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -57,12 +51,7 @@ description: "Task list for UI Layout improvements feature"
 
 ### Implementation for User Story 1
 
-- [ ] T009 [P] [US1] Implement tab-based navigation in src/views/main_view.go
-- [ ] T010 [P] [US1] Create header section with styled title in src/views/main_view.go
-- [ ] T011 [US1] Implement main content area with organized layout for timer and tasks
-- [ ] T012 [US1] Add status bar at bottom showing current status and controls
-- [ ] T013 [US1] Implement proper visual hierarchy with borders, padding and margins
-- [ ] T014 [US1] Write unit tests for new layout structure in tests/unit/layout_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -76,12 +65,7 @@ description: "Task list for UI Layout improvements feature"
 
 ### Implementation for User Story 2
 
-- [ ] T015 [P] [US2] Define consistent color palette in src/views/styles.go
-- [ ] T016 [P] [US2] Implement active/inactive tab styles with visual feedback
-- [ ] T017 [US2] Create consistent button and control styles
-- [ ] T018 [US2] Add color definitions for different states (running, paused, etc.)
-- [ ] T019 [US2] Implement visual elements like borders, padding, and margins for separation
-- [ ] T020 [US2] Write unit tests for styling components in tests/unit/styling_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -95,12 +79,7 @@ description: "Task list for UI Layout improvements feature"
 
 ### Implementation for User Story 3
 
-- [ ] T021 [P] [US3] Implement terminal size detection in src/views/app.go
-- [ ] T022 [P] [US3] Create responsive layout calculations using lipgloss width detection
-- [ ] T023 [US3] Implement proper alignment for different terminal sizes
-- [ ] T024 [US3] Add sizing constraints that adapt to available space
-- [ ] T025 [US3] Implement gap handling for different terminal widths
-- [ ] T026 [US3] Write tests for responsive behavior in tests/unit/responsive_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: At this point, User Stories 1, 2 AND 3 should all work together
 
@@ -114,11 +93,7 @@ description: "Task list for UI Layout improvements feature"
 
 ### Implementation for User Story 4
 
-- [ ] T027 [P] [US4] Create styled task list component using lipgloss in src/components/task_list.go
-- [ ] T028 [P] [US4] Implement task item styles with visual indicators
-- [ ] T029 [US4] Add proper spacing and borders for task components
-- [ ] T030 [US4] Integrate task list with tab navigation system
-- [ ] T031 [US4] Write unit tests for enhanced task view in tests/unit/task_view_test.go
+Tasks filed as GitHub Issues #1–#101.
 
 **Checkpoint**: At this point, all user stories should work together
 
@@ -128,13 +103,7 @@ description: "Task list for UI Layout improvements feature"
 
 **Purpose**: Final integration, polish, and bug fixes
 
-- [ ] T032 [P] Review and refine all component styles for consistency
-- [ ] T033 [P] Update documentation for new UI components
-- [ ] T034 Test keyboard navigation throughout the new UI
-- [ ] T035 Fix the issue where the timer doesn't start when pressing space
-- [ ] T036 Fix the issue where pressing 'n' on task tab doesn't add a task
-- [ ] T037 Performance testing of new UI components
-- [ ] T038 Integration tests for complete UI flow
+Tasks filed as GitHub Issues #1–#101.
 
 **Final Checkpoint**: Complete, tested, and polished UI layout implementation
 
