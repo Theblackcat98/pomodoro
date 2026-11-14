@@ -87,10 +87,15 @@ func NewTaskList() *TaskList {
 	
 	delegate := TaskDelegate{}
 	
-	// Create the list model with default settings
+	// Create the list model with default settings. The app renders its own
+	// chrome (header, hints, empty state), so the list's built-in furniture
+	// is disabled.
 	listModel := list.New(listItems, delegate, 0, 0)
-	listModel.Title = "Tasks"
-	listModel.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
+	listModel.SetShowTitle(false)
+	listModel.SetShowStatusBar(false)
+	listModel.SetShowHelp(false)
+	listModel.SetShowPagination(false)
+	listModel.SetFilteringEnabled(false)
 	
 	return &TaskList{
 		list:  listModel,

@@ -25,7 +25,7 @@ type PersistenceService interface {
 type AppData struct {
 	Sessions []models.TimerSession `json:"sessions"`
 	Settings models.Settings       `json:"settings"`
-	Tasks    []models.Task         `json:"tasks"`
+	Tasks    []*models.Task        `json:"tasks"`
 }
 
 // SessionFilter defines filters for querying sessions
