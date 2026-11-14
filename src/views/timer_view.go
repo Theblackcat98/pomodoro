@@ -49,6 +49,10 @@ func (m Model) renderTimerView() string {
 	}
 
 	trackStyle := lipgloss.NewStyle().Foreground(colorFaint)
+	// Paused "breathing": the track gently brightens and dims.
+	if active && session.Status == models.Paused && m.clock.Second()%2 == 1 {
+		trackStyle = lipgloss.NewStyle().Foreground(colorDim)
+	}
 	ring := renderRing(fraction, lipgloss.NewStyle().Foreground(accent), trackStyle, []string{
 		lipgloss.NewStyle().Foreground(accent).Bold(true).Render(wordmark),
 		lipgloss.NewStyle().Bold(true).Render(digits),
@@ -73,10 +77,9 @@ func (m Model) renderTimerView() string {
 		sections = append(sections, lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render(breakSuggestion(sessionType)))
 	}
 
-	// Progress bar while a session is on screen.
+	// Progress bar while a session is on screen (spring-eased per tick).
 	if active || session != nil && session.Status == models.Completed {
-		bar := progressBar(fraction, 40, accent)
-		sections = append(sections, bar)
+		sections = append(sections, m.progress.View())
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Center, sections...)
@@ -90,6 +93,17 @@ func (m Model) renderTimerControls(session *models.TimerSession) string {
 	}
 	secondary := func(label string) string {
 		return secondaryButtonStyle.Render(label)
+	}
+
+	// While the completion banner is up and a session will auto-start, show
+	// the transition spinner instead of the controls.
+	if m.spinActive && m.flash != "" {
+		next := m.timer.SuggestNext()
+		label := "starting focus…"
+		if next != models.FocusSession {
+			label = "starting break…"
+		}
+		return primary(m.spinner.View()+" "+label, sessionAccent(next, ""))
 	}
 
 	if session != nil && (session.Status == models.Running || session.Status == models.Paused) {

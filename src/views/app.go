@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -81,6 +83,12 @@ type Model struct {
 	toastSeq    int
 	confirmQuit bool
 	quitting    bool
+
+	// Animation state
+	progress    progress.Model // spring-animated session bar
+	spinner     spinner.Model  // shown while a session auto-starts
+	spinActive  bool
+	checkAnimID string // task row check animation (○→◐→●), empty = off
 }
 
 // serviceEvents adapts services.TimerObserver callbacks (invoked on the
@@ -143,6 +151,8 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 		taskList: components.NewTaskList(),
 		addEst:   1,
 		clock:    time.Now(),
+		progress: progress.New(progress.WithDefaultGradient(), progress.WithWidth(40)),
+		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 	}
 
 	titleInput := textinput.New()
@@ -204,14 +214,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clock = time.Time(msg)
 		return m, clockTick()
 
-	case models.TimerTickMsg:
-		// The service already advanced the session; the next render reflects it.
+	case models.SessionStartedMsg:
+		m.flash = ""
+		m.spinActive = false
+		return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
 
-	case models.SessionStartedMsg, models.SessionPausedMsg, models.SessionResumedMsg:
+	case models.SessionPausedMsg, models.SessionResumedMsg:
 		m.flash = ""
 
 	case models.SessionCompletedMsg:
 		return m.onSessionCompleted(msg.Session)
+
+	case models.TimerTickMsg:
+		// The service already advanced the session; ease the bar toward the
+		// new fraction.
+		if cmd := m.updateProgress(); cmd != nil {
+			return m, tea.Batch(cmd, waitForEvent(m.events))
+		}
+
+	case progress.FrameMsg:
+		pm, cmd := m.progress.Update(msg)
+		m.progress = pm.(progress.Model)
+		return m, tea.Batch(cmd, waitForEvent(m.events))
+
+	case spinner.TickMsg:
+		if m.spinActive {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, tea.Batch(cmd, spinner.Tick, waitForEvent(m.events))
+		}
+
+	case checkAnimMsg:
+		return m.onCheckAnimTick(msg)
 
 	case flashExpireMsg:
 		return m.onFlashExpired(msg)
@@ -249,8 +283,17 @@ func (m Model) onSessionCompleted(session *models.TimerSession) (tea.Model, tea.
 	}
 	m.notifier.PlaySessionCompleteSound()
 
+	// Show the transition spinner only when a session will auto-start.
+	autoStart := (session.Type == models.FocusSession && m.settings.AutoStartBreaks) ||
+		(session.Type != models.FocusSession && m.settings.AutoStartFocus)
+	m.spinActive = autoStart
+
 	m.flashSeq++
-	return m, tea.Batch(flashCmd(m.flashSeq), waitForEvent(m.events))
+	cmds := []tea.Cmd{flashCmd(m.flashSeq), waitForEvent(m.events)}
+	if autoStart {
+		cmds = append(cmds, spinner.Tick)
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // onFlashExpired hides the banner and applies auto-start settings.
@@ -270,6 +313,36 @@ func (m Model) onFlashExpired(msg flashExpireMsg) (tea.Model, tea.Cmd) {
 
 func flashCmd(seq int) tea.Cmd {
 	return tea.Tick(flashDuration, func(time.Time) tea.Msg { return flashExpireMsg{seq} })
+}
+
+// checkAnimMsg drives the task-row completion animation (○→◐→●).
+type checkAnimMsg struct{ frame int }
+
+func checkAnimCmd(frame int) tea.Cmd {
+	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return checkAnimMsg{frame} })
+}
+
+// onCheckAnimTick advances the row animation one frame.
+func (m Model) onCheckAnimTick(msg checkAnimMsg) (tea.Model, tea.Cmd) {
+	switch msg.frame {
+	case 1:
+		m.taskList.SetCheckAnim(m.checkAnimID, 2)
+		return m, tea.Batch(checkAnimCmd(2), waitForEvent(m.events))
+	default:
+		m.checkAnimID = ""
+		m.taskList.SetCheckAnim("", 0)
+	}
+	return m, waitForEvent(m.events)
+}
+
+// updateProgress eases the bar toward the current session's elapsed fraction.
+func (m *Model) updateProgress() tea.Cmd {
+	s := m.timer.GetCurrentSession()
+	if s == nil || s.Duration <= 0 || (s.Status != models.Running && s.Status != models.Paused) {
+		return nil
+	}
+	fraction := 1 - float64(s.Remaining)/float64(s.Duration)
+	return m.progress.SetPercent(fraction)
 }
 
 func (m *Model) toastf(format string, args ...interface{}) {
@@ -415,6 +488,8 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 		if session != nil {
 			_ = m.timer.StopSession()
 			m.flash = ""
+			m.spinActive = false
+			return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
 		}
 
 	case "s":
@@ -453,7 +528,15 @@ func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 
 	case "x":
 		if task := m.taskList.GetSelected(); task != nil {
+			wasDone := task.Status == models.DoneStatus
 			m.toggleTaskDone(task)
+			if !wasDone {
+				// Animate the check mark: ○ → ◐ → ●
+				m.checkAnimID = task.ID
+				m.taskList.SetCheckAnim(task.ID, 1)
+				return m, tea.Batch(checkAnimCmd(1), waitForEvent(m.events))
+			}
+			m.taskList.SetCheckAnim("", 0)
 		}
 		return m, nil
 
@@ -469,6 +552,14 @@ func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	case "enter":
 		if task := m.taskList.GetSelected(); task != nil {
 			m.currentTaskID = task.ID
+			// Working on it now: mark in progress (unless already done).
+			if task.Status == models.ToDoStatus {
+				task.Status = models.InProgressStatus
+				m.taskList.UpdateTask(task)
+				if m.store != nil {
+					_ = m.store.SaveTask(task)
+				}
+			}
 			m.toastf("Focusing on: %s", task.Title)
 		}
 		return m, nil

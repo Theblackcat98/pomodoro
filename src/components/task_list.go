@@ -3,11 +3,21 @@ package components
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"pomodoro/src/models"
+	"pomodoro/src/utils"
+)
+
+// Delegate color tokens (kept local: the views package imports components, so
+// it cannot be imported back).
+var (
+	delegateColorDone   = lipgloss.Color("#46A758")
+	delegateColorFocus  = lipgloss.Color("#E5484D")
+	delegateColorAccent = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
 )
 
 // Item represents a task in the list
@@ -20,57 +30,107 @@ func (i Item) FilterValue() string {
 	return i.Task.Title
 }
 
-// TaskDelegate handles the rendering of list items
-type TaskDelegate struct{}
-
-// Height returns the height of the delegate
-func (d TaskDelegate) Height() int {
-	return 2 // Height for each task item
+// TaskDelegate handles the rendering of list items.
+type TaskDelegate struct {
+	anim *CheckAnim // shared row-animation state; may be nil
 }
 
-// Spacing returns the spacing between items
-func (d TaskDelegate) Spacing() int {
+// Height returns the height of the delegate: one line per task.
+func (d TaskDelegate) Height() int {
 	return 1
 }
 
-// Update handles messages for the delegate
+// Spacing returns the spacing between items.
+func (d TaskDelegate) Spacing() int {
+	return 0
+}
+
+// Update handles messages for the delegate.
 func (d TaskDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
 	return nil
 }
 
-// Render renders the delegate
+// Render draws one task row:
+//
+//	❯ ◐ Write the plan doc            🍅🍅🍅 1/3
 func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(Item)
 	if !ok {
 		return
 	}
-
 	task := i.Task
+	selected := index == m.Index()
 
-	// Check if this item is selected
-	taskStyle := lipgloss.NewStyle().Padding(0, 1)
-	if index == m.Index() {
-		taskStyle = taskStyle.
-			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(lipgloss.Color("62")).
-			Foreground(lipgloss.Color("229")).
-			Background(lipgloss.Color("57"))
+	// Status glyph: ○ to-do, ◐ in progress, ● done.
+	glyph := "○"
+	switch task.Status {
+	case models.InProgressStatus:
+		glyph = "◐"
+	case models.DoneStatus:
+		glyph = "●"
+	}
+	// Completion animation: show the intermediate frame right after the check.
+	if d.anim != nil && d.anim.ID == task.ID && d.anim.Frame > 0 && task.Status == models.DoneStatus {
+		glyph = "◐"
 	}
 
-	statusSymbol := "○" // Uncompleted
-	if task.Status == models.DoneStatus {
-		statusSymbol = "●" // Completed
+	titleStyle := lipgloss.NewStyle()
+	glyphStyle := lipgloss.NewStyle()
+	switch task.Status {
+	case models.DoneStatus:
+		titleStyle = titleStyle.
+			Foreground(lipgloss.AdaptiveColor{Light: "#9A9A9A", Dark: "#5C5C5C"}).
+			Strikethrough(true)
+		glyphStyle = glyphStyle.Foreground(delegateColorDone)
+	case models.InProgressStatus:
+		glyphStyle = glyphStyle.Foreground(delegateColorFocus)
+		fallthrough
+	default:
+		titleStyle = titleStyle.Foreground(lipgloss.AdaptiveColor{Light: "#3F3F3F", Dark: "#EEEEEE"})
 	}
 
 	title := task.Title
-	if task.Status == models.DoneStatus {
-		title = fmt.Sprintf("[DONE] %s", task.Title)
+	estimate := ""
+	if task.EstimatedPomodoros > 0 {
+		tomatoes := task.EstimatedPomodoros
+		if tomatoes > 8 {
+			tomatoes = 8 // keep rows sane for very large estimates
+		}
+		estimate = fmt.Sprintf("%s %d/%d",
+			strings.Repeat("🍅", tomatoes),
+			task.CompletedPomodoros, task.EstimatedPomodoros)
+		estimateStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#8F8F8F", Dark: "#6E6E6E"})
+		if task.Status == models.DoneStatus {
+			estimateStyle = estimateStyle.Foreground(lipgloss.AdaptiveColor{Light: "#B4B4B4", Dark: "#454545"})
+		}
+		estimate = estimateStyle.Render(estimate)
 	}
 
-	fmt.Fprintf(w, taskStyle.Render(fmt.Sprintf("%s %s\n%s", 
-		statusSymbol, 
-		title,
-		lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(task.Description))))
+	cursor := "  "
+	if selected {
+		cursor = lipgloss.NewStyle().Foreground(delegateColorAccent).Bold(true).Render("❯ ")
+		titleStyle = titleStyle.Bold(true)
+	}
+
+	// Pad the title so the estimates right-align across rows.
+	availWidth := m.Width() - 6 - lipgloss.Width(estimate)
+	if availWidth < 1 {
+		availWidth = 1
+	}
+	padded := titleStyle.Render(fmt.Sprintf("%-*s", lipgloss.Width(utils.StripANSI(title)), utils.StripANSI(title)))
+	if pad := availWidth - lipgloss.Width(utils.StripANSI(title)); pad > 0 {
+		padded += strings.Repeat(" ", pad)
+	}
+
+	row := fmt.Sprintf("%s%s %s %s", cursor, glyphStyle.Render(glyph), padded, estimate)
+	fmt.Fprintf(w, "%s", row)
+}
+
+// CheckAnim tracks the row completion animation (○→◐→●) for one task.
+// An empty ID means "no animation".
+type CheckAnim struct {
+	ID    string
+	Frame int
 }
 
 // TaskList represents the task list component using Bubbles list
@@ -78,29 +138,34 @@ type TaskList struct {
 	list     list.Model
 	tasks    []*models.Task
 	selected *models.Task
+	anim     CheckAnim
 }
 
 // NewTaskList creates a new task list component
 func NewTaskList() *TaskList {
 	// Create default list items from tasks
 	var listItems []list.Item
-	
-	delegate := TaskDelegate{}
-	
-	// Create the list model with default settings. The app renders its own
-	// chrome (header, hints, empty state), so the list's built-in furniture
-	// is disabled.
-	listModel := list.New(listItems, delegate, 0, 0)
-	listModel.SetShowTitle(false)
-	listModel.SetShowStatusBar(false)
-	listModel.SetShowHelp(false)
-	listModel.SetShowPagination(false)
-	listModel.SetFilteringEnabled(false)
-	
-	return &TaskList{
-		list:  listModel,
+
+	tl := &TaskList{
 		tasks: make([]*models.Task, 0),
 	}
+
+	// The delegate animates through tl.anim (pointer keeps them in sync).
+	// The list's built-in furniture is disabled: the app renders its own
+	// chrome (header, hints, empty state).
+	tl.list = list.New(listItems, TaskDelegate{anim: &tl.anim}, 0, 0)
+	tl.list.SetShowTitle(false)
+	tl.list.SetShowStatusBar(false)
+	tl.list.SetShowHelp(false)
+	tl.list.SetShowPagination(false)
+	tl.list.SetFilteringEnabled(false)
+
+	return tl
+}
+
+// SetCheckAnim sets the row animation target. An empty id clears it.
+func (tl *TaskList) SetCheckAnim(id string, frame int) {
+	tl.anim = CheckAnim{ID: id, Frame: frame}
 }
 
 // Init initializes the task list

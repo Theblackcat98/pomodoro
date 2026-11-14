@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"pomodoro/src/utils"
 )
 
 // ringRadius is the ring's radius in (aspect-corrected) grid units; the ring
@@ -73,7 +74,7 @@ func renderRing(fraction float64, filledStyle, trackStyle lipgloss.Style, center
 		centerIdx := row - textStart
 		if centerIdx >= 0 && centerIdx < len(centerLines) && centerLines[centerIdx] != "" {
 			text = centerLines[centerIdx]
-			runes := []rune(stripANSI(text))
+			runes := []rune(utils.StripANSI(text))
 			textCol = (colCount - len(runes)) / 2
 			if textCol < 0 {
 				textCol = 0
@@ -86,7 +87,7 @@ func renderRing(fraction float64, filledStyle, trackStyle lipgloss.Style, center
 		for col < colCount {
 			if textCol >= 0 && !textDone && col == textCol {
 				out.WriteString(text)
-				col += len([]rune(stripANSI(text)))
+				col += len([]rune(utils.StripANSI(text)))
 				textDone = true
 				continue
 			}
@@ -106,25 +107,6 @@ func renderRing(fraction float64, filledStyle, trackStyle lipgloss.Style, center
 		}
 	}
 	return out.String()
-}
-
-// stripANSI removes ANSI escape sequences so raw text width can be measured.
-func stripANSI(s string) string {
-	var b strings.Builder
-	inEscape := false
-	for _, r := range s {
-		switch {
-		case r == '\x1b':
-			inEscape = true
-		case inEscape:
-			if r == 'm' {
-				inEscape = false
-			}
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 // spacedTime letterspaces "MM:SS" for the large center readout, e.g. "1 2 : 3 4".

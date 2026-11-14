@@ -110,8 +110,10 @@ func (m Model) renderStatusBar() string {
 
 	clock := statusHintStyle.Render(m.clock.Format("15:04"))
 
+	// Account for the bar's own horizontal padding (1 column each side) so
+	// the clock never wraps to the next row.
 	used := lipgloss.Width(chip) + 1 + lipgloss.Width(hints) + lipgloss.Width(m.toast) + 1 + lipgloss.Width(clock)
-	gap := max(1, m.width-used)
+	gap := max(1, m.width-used-2)
 
 	bar := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -137,7 +139,12 @@ func (m Model) statusChip() (string, lipgloss.Color) {
 	case session.Status == models.Paused:
 		return "‖ PAUSED", colorPaused
 	case session.Type == models.FocusSession:
-		return "● RUNNING", colorFocus
+		// Blink the dot while running so the chip feels alive.
+		glyph := "●"
+		if m.clock.Second()%2 == 1 {
+			glyph = "◦"
+		}
+		return glyph + " RUNNING", colorFocus
 	default:
 		return "☕ ON BREAK", sessionAccent(session.Type, session.Status)
 	}
