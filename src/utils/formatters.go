@@ -42,3 +42,17 @@ func FormatDuration(duration time.Duration) string {
 	seconds := int(duration.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
+
+// FormatDurationHuman renders durations compactly for labels: "25m",
+// "1h 05m", "45s".
+func FormatDurationHuman(duration time.Duration) string {
+	duration = duration.Round(time.Second)
+	switch {
+	case duration >= time.Hour:
+		return fmt.Sprintf("%dh %02dm", int(duration.Hours()), int(duration.Minutes())%60)
+	case duration >= time.Minute:
+		return fmt.Sprintf("%dm", int(duration.Minutes()))
+	default:
+		return fmt.Sprintf("%ds", int(duration.Seconds()))
+	}
+}

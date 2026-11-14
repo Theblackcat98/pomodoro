@@ -25,3 +25,35 @@ type Settings struct {
 	CreatedAt            time.Time        `json:"created_at"`
 	UpdatedAt            time.Time        `json:"updated_at"`
 }
+
+// DefaultSettings returns the documented default settings.
+func DefaultSettings() *Settings {
+	now := time.Now()
+	return &Settings{
+		ID:                 "default",
+		FocusDuration:      25 * time.Minute,
+		ShortBreakDuration: 5 * time.Minute,
+		LongBreakDuration:  15 * time.Minute,
+		LongBreakInterval:  4,
+		AutoStartBreaks:    true,
+		AutoStartFocus:     false,
+		NotificationType:   SoundNotification,
+		Theme:              "default",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+}
+
+// DurationFor returns the configured duration for a session type.
+func (s *Settings) DurationFor(sessionType SessionType) time.Duration {
+	switch sessionType {
+	case FocusSession:
+		return s.FocusDuration
+	case ShortBreak:
+		return s.ShortBreakDuration
+	case LongBreak:
+		return s.LongBreakDuration
+	default:
+		return s.FocusDuration
+	}
+}

@@ -15,6 +15,7 @@ type TimerComponent struct {
 	timer      timer.Model
 	sessionType models.SessionType
 	status     models.SessionStatus
+	remaining  time.Duration // tracked locally; bubbles/timer does not expose it
 	onComplete func()
 	notifier   *Notifier
 }
@@ -24,12 +25,13 @@ func NewTimerComponent(sessionType models.SessionType, duration time.Duration) *
 	bubblesTimer := timer.New(duration)
 
 	// Create a default notifier with visual notifications
-	notifier := NewNotifier(VisualNotification)
+	notifier := NewNotifier(models.VisualNotification)
 
 	return &TimerComponent{
 		timer:       bubblesTimer,
 		sessionType: sessionType,
 		status:      models.Running,
+		remaining:   duration,
 		notifier:    notifier,
 	}
 }
@@ -42,6 +44,16 @@ func (t *TimerComponent) Init() tea.Cmd {
 // Update handles messages for the timer component
 func (t *TimerComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	// bubbles/timer keeps no public remaining time, so track it locally while
+	// the session is running.
+	if _, ok := msg.(timer.TickMsg); ok && t.status == models.Running && t.remaining > 0 {
+		t.remaining -= time.Second
+		if t.remaining < 0 {
+			t.remaining = 0
+		}
+	}
+
 	t.timer, cmd = t.timer.Update(msg)
 
 	// If timer is done, update status and call completion callback
@@ -49,7 +61,7 @@ func (t *TimerComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.status = models.Completed
 		// Send notification for completed session
 		if t.notifier != nil {
-			t.notifier.NotifySessionComplete(t.sessionType)
+			t.notifier.PlaySessionCompleteSound()
 		}
 		if t.onComplete != nil {
 			t.onComplete()
@@ -75,10 +87,10 @@ func (t *TimerComponent) Start() tea.Cmd {
 	return t.timer.Start()
 }
 
-// Pause pauses the timer
+// Pause pauses the timer by halting local time tracking (the bubbles timer
+// has no native pause; ticks are simply not counted while paused).
 func (t *TimerComponent) Pause() tea.Cmd {
-	// The bubbles timer doesn't have a pause mechanism
-	// We'll just return nil to indicate no command
+	t.status = models.Paused
 	return nil
 }
 
@@ -89,16 +101,10 @@ func (t *TimerComponent) SetOnComplete(fn func()) {
 
 // GetRemainingTime returns the remaining time
 func (t *TimerComponent) GetRemainingTime() time.Duration {
-	// Get the remaining time from the timer component
-	// The bubbles timer struct has Timeout and elapsed fields
-	// However, we need to calculate remaining based on current state
 	if t.timer.Timedout() {
 		return 0
 	}
-
-	// For the bubbles timer, we can access the timeout and calculate manually
-	// We'll need to use a different approach since the API is not directly exposing elapsed
-	return t.timer.Timeout
+	return t.remaining
 }
 
 // IsComplete returns whether the timer has completed

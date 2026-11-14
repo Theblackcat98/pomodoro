@@ -129,25 +129,20 @@ func (tl *TaskList) View() string {
 
 // AddTask adds a task to the list
 func (tl *TaskList) AddTask(task *models.Task) {
-	item := Item{Task: task}
-	tl.list.InsertItem(len(tl.list.Items()), item)
 	tl.tasks = append(tl.tasks, task)
+	tl.syncList()
 }
 
 // RemoveTask removes a task from the list by ID
 func (tl *TaskList) RemoveTask(taskID string) {
-	var newTasks []*models.Task
-	var newListItems []list.Item
-	
-	for i, task := range tl.tasks {
+	kept := tl.tasks[:0]
+	for _, task := range tl.tasks {
 		if task.ID != taskID {
-			newTasks = append(newTasks, task)
-			newListItems = append(newListItems, tl.list.Items()[i])
+			kept = append(kept, task)
 		}
 	}
-	
-	tl.tasks = newTasks
-	tl.list.SetItems(newListItems)
+	tl.tasks = kept
+	tl.syncList()
 }
 
 // UpdateTask updates a task in the list
@@ -155,11 +150,21 @@ func (tl *TaskList) UpdateTask(updatedTask *models.Task) {
 	for i, task := range tl.tasks {
 		if task.ID == updatedTask.ID {
 			tl.tasks[i] = updatedTask
-			item := Item{Task: updatedTask}
-			tl.list.SetItem(i, item)
 			break
 		}
 	}
+	tl.syncList()
+}
+
+// syncList rebuilds the bubbles list items from tl.tasks so the two views of
+// the data can never drift apart (the old per-index copy did when tasks were
+// removed).
+func (tl *TaskList) syncList() {
+	items := make([]list.Item, 0, len(tl.tasks))
+	for _, task := range tl.tasks {
+		items = append(items, Item{Task: task})
+	}
+	tl.list.SetItems(items)
 }
 
 // GetTasks returns all tasks in the list

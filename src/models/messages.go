@@ -14,6 +14,14 @@ type SessionStartedMsg struct {
 	Session *TimerSession
 }
 
+type SessionPausedMsg struct {
+	Session *TimerSession
+}
+
+type SessionResumedMsg struct {
+	Session *TimerSession
+}
+
 type SessionCompletedMsg struct {
 	Session *TimerSession
 }

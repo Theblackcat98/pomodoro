@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 type TaskStatus string
 
@@ -20,4 +23,24 @@ type Task struct {
 	CreatedAt            time.Time      `json:"created_at"`
 	CompletedAt          *time.Time     `json:"completed_at,omitempty"`
 	Tags                 []string       `json:"tags,omitempty"`
+}
+
+// NewID returns a compact unique identifier based on the current time.
+func NewID() string {
+	return strconv.FormatInt(time.Now().UnixNano(), 36)
+}
+
+// NewTask creates a task with a fresh ID, timestamp, and to-do status.
+func NewTask(title, description string, estimatedPomodoros int) *Task {
+	if estimatedPomodoros <= 0 {
+		estimatedPomodoros = 1
+	}
+	return &Task{
+		ID:                 NewID(),
+		Title:              title,
+		Description:        description,
+		Status:             ToDoStatus,
+		EstimatedPomodoros: estimatedPomodoros,
+		CreatedAt:          time.Now(),
+	}
 }

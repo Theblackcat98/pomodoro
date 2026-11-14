@@ -1,6 +1,8 @@
 package components
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -59,16 +61,11 @@ func (ti *TaskInput) GetValue() string {
 
 // GetTask creates and returns a Task model based on the input
 func (ti *TaskInput) GetTask() *models.Task {
-	if ti.textInput.Value() == "" {
+	title := strings.TrimSpace(ti.textInput.Value())
+	if title == "" {
 		return nil
 	}
-	
-	return &models.Task{
-		Title:       ti.textInput.Value(),
-		Description: "",
-		Status:      models.ToDoStatus,
-		CreatedAt:   models.Task{}.CreatedAt, // This will be set by the service
-	}
+	return models.NewTask(title, "", 1)
 }
 
 // Focus focuses the text input

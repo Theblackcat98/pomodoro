@@ -55,16 +55,20 @@ func (tc *TimerControl) Init() tea.Cmd {
 	return nil
 }
 
-// Update handles messages for the timer control
+// Update handles messages for the timer control. Keys only toggle the button
+// while it is focused, so stray Space/Enter presses elsewhere never trigger it.
 func (tc *TimerControl) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if !tc.IsFocused() {
+			return tc, nil
+		}
 		switch msg.Type {
 		case tea.KeyEnter, tea.KeySpace:
 			tc.toggle()
 		}
 	}
-	
+
 	return tc, nil
 }
 
