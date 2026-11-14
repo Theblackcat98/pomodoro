@@ -5,10 +5,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"pomodoro/src/components"
 	"pomodoro/src/models"
@@ -22,8 +25,14 @@ const (
 	TabTimer Tab = iota
 	TabTasks
 	TabStats
+	TabSettings
 	TabHelp
 )
+
+// tabCount must match the Tab constants above.
+const tabCount = 5
+
+var tabNames = []string{"Timer", "Tasks", "Stats", "Settings", "Help"}
 
 // addField identifies the focused field in the new-task form.
 type addField int
@@ -89,6 +98,12 @@ type Model struct {
 	spinner     spinner.Model  // shown while a session auto-starts
 	spinActive  bool
 	checkAnimID string // task row check animation (○→◐→●), empty = off
+
+	// Phase-4 view state
+	sessTable      table.Model      // recent sessions (Stats)
+	helpViewport   viewport.Model   // scrollable cheat sheet (Help)
+	help           help.Model       // short help row (Help footer)
+	settingsCursor int              // focused row (Settings)
 }
 
 // serviceEvents adapts services.TimerObserver callbacks (invoked on the
@@ -153,6 +168,18 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 		clock:    time.Now(),
 		progress: progress.New(progress.WithDefaultGradient(), progress.WithWidth(40)),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		sessTable: table.New(
+			table.WithColumns([]table.Column{
+				{Title: "WHEN", Width: 7},
+				{Title: "TYPE", Width: 15},
+				{Title: "LENGTH", Width: 9},
+				{Title: "TASK", Width: 32},
+			}),
+			table.WithFocused(true),
+			table.WithHeight(8),
+		),
+		help:         help.New(),
+		helpViewport: viewport.New(0, 10),
 	}
 
 	titleInput := textinput.New()
@@ -188,6 +215,8 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 	}
 	m.timer.SetSettings(m.settings)
 	m.notifier = components.NewNotifier(m.settings.NotificationType)
+	m.helpViewport.SetContent(helpContent())
+	m.refreshSessionTable()
 
 	return m
 }
@@ -208,6 +237,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.initialized = true
 		m.taskList.SetSize(max(20, m.width-6), max(6, m.height-10))
+		// The stats view puts chart and table side by side on wide terminals.
+		if m.width >= 100 {
+			m.sessTable.SetWidth(max(20, m.width-36))
+		} else {
+			m.sessTable.SetWidth(max(20, m.width-8))
+		}
+		m.sessTable.SetHeight(max(4, min(9, m.height-14)))
+		m.helpViewport.Width = max(20, m.width-8)
+		m.helpViewport.Height = max(6, m.height-8)
+		if m.width < 80 || m.height < 20 {
+			m.progress.Width = 24
+		} else {
+			m.progress.Width = 40
+		}
 		return m, nil
 
 	case clockTickMsg:
@@ -239,9 +282,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		if m.spinActive {
+			// spinner.Update already returns the next-tick command; spawning
+			// another spinner.Tick here would multiply the tick chains.
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
-			return m, tea.Batch(cmd, spinner.Tick, waitForEvent(m.events))
+			return m, tea.Batch(cmd, waitForEvent(m.events))
 		}
 
 	case checkAnimMsg:
@@ -269,6 +314,7 @@ func (m Model) onSessionCompleted(session *models.TimerSession) (tea.Model, tea.
 	if len(m.sessions) > maxMemorySessions {
 		m.sessions = m.sessions[:maxMemorySessions]
 	}
+	m.refreshSessionTable()
 
 	if session.Type == models.FocusSession {
 		if task := m.currentTask(); task != nil {
@@ -304,7 +350,12 @@ func (m Model) onFlashExpired(msg flashExpireMsg) (tea.Model, tea.Cmd) {
 			autoStart := (done.Type == models.FocusSession && m.settings.AutoStartBreaks) ||
 				(done.Type != models.FocusSession && m.settings.AutoStartFocus)
 			if autoStart {
-				_ = m.timer.StartSession(m.timer.SuggestNext())
+				if err := m.timer.StartSession(m.timer.SuggestNext()); err == nil {
+					// Keep attributing auto-started sessions to the current task.
+					if s := m.timer.GetCurrentSession(); s != nil {
+						s.TaskID = m.currentTaskID
+					}
+				}
 			}
 		}
 	}
@@ -384,12 +435,16 @@ func (m Model) todayCount() int {
 }
 
 // startFocus starts a focus session, optionally overriding the duration.
+// The session is linked to the current task so stats can attribute it.
 func (m *Model) startFocus(duration time.Duration) {
 	m.flash = ""
 	if duration > 0 {
 		_ = m.timer.StartSessionWithDuration(models.FocusSession, duration)
 	} else {
 		_ = m.timer.StartSession(models.FocusSession)
+	}
+	if s := m.timer.GetCurrentSession(); s != nil {
+		s.TaskID = m.currentTaskID
 	}
 }
 
@@ -424,10 +479,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "tab":
-		m.tab = (m.tab + 1) % 4
+		m.tab = (m.tab + 1) % tabCount
 		return m, nil
 	case "shift+tab":
-		m.tab = (m.tab + 3) % 4
+		m.tab = (m.tab + tabCount - 1) % tabCount
 		return m, nil
 
 	case "q":
@@ -464,6 +519,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTimerKey(key)
 	case TabTasks:
 		return m.handleTasksKey(msg, key)
+	case TabStats:
+		return m.handleStatsKey(msg, key)
+	case TabSettings:
+		return m.handleSettingsKey(key)
+	case TabHelp:
+		return m.handleHelpKey(msg, key)
 	}
 
 	return m, waitForEvent(m.events)
@@ -676,6 +737,28 @@ func (m Model) handleAddFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var c tea.Cmd
 		m.addDesc, c = m.addDesc.Update(msg)
 		cmd = c
+	}
+	return m, tea.Batch(cmd, waitForEvent(m.events))
+}
+
+// handleStatsKey scrolls the recent-sessions table.
+func (m Model) handleStatsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch key {
+	case "up", "down", "j", "k", "pgup", "pgdown", "home", "end":
+		var updated table.Model
+		updated, cmd = m.sessTable.Update(msg)
+		m.sessTable = updated
+	}
+	return m, tea.Batch(cmd, waitForEvent(m.events))
+}
+
+// handleHelpKey scrolls the cheat sheet.
+func (m Model) handleHelpKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch key {
+	case "up", "down", "j", "k", "pgup", "pgdown":
+		m.helpViewport, cmd = m.helpViewport.Update(msg)
 	}
 	return m, tea.Batch(cmd, waitForEvent(m.events))
 }

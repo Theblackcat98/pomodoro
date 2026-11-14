@@ -8,9 +8,9 @@ import (
 	"pomodoro/src/utils"
 )
 
-// ringRadius is the ring's radius in (aspect-corrected) grid units; the ring
-// occupies 2*ringRadius+1 rows.
-const ringRadius = 4
+// defaultRingRadius is the ring's radius in (aspect-corrected) grid units;
+// the ring occupies 2*radius+1 rows. Compact layouts pass a smaller radius.
+const defaultRingRadius = 4
 
 type ringCell struct {
 	row, col int
@@ -23,11 +23,19 @@ type ringCell struct {
 //
 //	fraction ∈ [0,1] is the elapsed portion of the session.
 func renderRing(fraction float64, filledStyle, trackStyle lipgloss.Style, centerLines []string) string {
+	return renderRingSized(fraction, filledStyle, trackStyle, centerLines, defaultRingRadius)
+}
+
+// renderRingSized is renderRing with an explicit radius (compact layouts).
+func renderRingSized(fraction float64, filledStyle, trackStyle lipgloss.Style, centerLines []string, ringRadius int) string {
 	if fraction < 0 {
 		fraction = 0
 	}
 	if fraction > 1 {
 		fraction = 1
+	}
+	if ringRadius < 2 {
+		ringRadius = 2
 	}
 
 	halfWidth := ringRadius * 2 // horizontal char half-span (2 chars per grid unit)
@@ -47,7 +55,7 @@ func renderRing(fraction float64, filledStyle, trackStyle lipgloss.Style, center
 		y := float64(row - ringRadius)
 		for col := 0; col < colCount; col++ {
 			x := float64(col-halfWidth) / 2.0
-			if d := math.Sqrt(x*x + y*y); math.Abs(d-ringRadius) > 0.55 {
+			if d := math.Sqrt(x*x + y*y); math.Abs(d-float64(ringRadius)) > 0.55 {
 				continue
 			}
 			angle := math.Atan2(x, -y) / (2 * math.Pi) // ∈ [-0.5, 0.5], 0 at top

@@ -1,49 +1,73 @@
 package views
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// renderHelpView draws the keybinding cheat sheet (upgraded to a bubbles/help
-// + viewport overlay in Phase 4).
-func (m Model) renderHelpView() string {
-	group := func(title string, lines []string) string {
-		body := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title) + "\n" +
-			stringsJoin(lines)
-		return panelStyle.Render(body)
+// helpContent builds the scrollable cheat sheet from the key bindings.
+func helpContent() string {
+	section := func(title string, bs []key.Binding) string {
+		lines := []string{lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title)}
+		for _, b := range bs {
+			if !b.Enabled() {
+				continue
+			}
+			h := b.Help()
+			lines = append(lines, fmt.Sprintf("  %-14s %s",
+				keyNameStyle.Render(h.Key), statusHintStyle.Render(h.Desc)))
+		}
+		return strings.Join(lines, "\n")
 	}
 
-	general := group("General", []string{
-		"tab / shift+tab    switch views",
-		"?                  open this help",
-		"q                  quit (confirms while a session runs)",
-		"ctrl+c             quit immediately",
-	})
-	timer := group("Timer", []string{
-		"space / enter      start, pause, resume",
-		"r                  reset to ready",
-		"s                  skip to the next session",
-		"1 / 2 / 3          start 15 / 25 / 35 minute focus",
-	})
-	tasks := group("Tasks", []string{
-		"a                  add a task",
-		"x                  toggle done",
-		"d                  delete (y to confirm)",
-		"enter              focus the selected task",
-		"j / k              move the cursor",
-	})
+	about := statusHintStyle.Render(
+		"Sessions follow the classic rhythm: focus, short break, and a long\n" +
+			"break every few rounds (configurable under Settings). Completed\n" +
+			"sessions, tasks, and settings survive restarts.",
+	)
 
-	grid := lipgloss.JoinHorizontal(lipgloss.Top, general, "  ", timer)
-	return lipgloss.JoinVertical(lipgloss.Center, grid, "  ", tasks)
+	body := strings.Join([]string{
+		section("General", []key.Binding{keys.Tab, keys.BackTab, keys.Help, keys.Quit, keys.ForceQuit}),
+		"",
+		section("Timer", []key.Binding{keys.StartPause, keys.Reset, keys.Skip, keys.QuickStart}),
+		"",
+		section("Tasks", []key.Binding{keys.Add, keys.Toggle, keys.Delete, keys.FocusTask, keys.Nav}),
+		"",
+		section("Settings", []key.Binding{keys.Nav, keys.Adjust, keys.ToggleSet}),
+		"",
+		section("Help", []key.Binding{keys.Scroll, keys.Cancel}),
+		"",
+		about,
+	}, "\n")
+
+	return panelStyle.Render(body)
 }
 
-func stringsJoin(lines []string) string {
-	out := ""
-	for i, l := range lines {
-		if i > 0 {
-			out += "\n"
-		}
-		out += l
+// helpKeys adapts the shared bindings to bubbles/help's KeyMap interface.
+type helpKeys struct{}
+
+func (helpKeys) ShortHelp() []key.Binding {
+	return []key.Binding{keys.Scroll, keys.Cancel, keys.Quit}
+}
+
+func (helpKeys) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{keys.Scroll, keys.Cancel, keys.Quit},
 	}
-	return out
+}
+
+// renderHelpView draws the scrollable cheat sheet with a help footer.
+func (m Model) renderHelpView() string {
+	// Keep the viewport content fresh (width-dependent wrapping).
+	m.helpViewport.SetContent(helpContent())
+
+	body := lipgloss.JoinVertical(lipgloss.Center,
+		m.helpViewport.View(),
+		"",
+		m.help.View(helpKeys{}),
+	)
+	return lipgloss.Place(m.width, max(10, m.height-6), lipgloss.Center, lipgloss.Center, body)
 }

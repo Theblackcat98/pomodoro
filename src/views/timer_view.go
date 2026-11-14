@@ -53,11 +53,17 @@ func (m Model) renderTimerView() string {
 	if active && session.Status == models.Paused && m.clock.Second()%2 == 1 {
 		trackStyle = lipgloss.NewStyle().Foreground(colorDim)
 	}
-	ring := renderRing(fraction, lipgloss.NewStyle().Foreground(accent), trackStyle, []string{
+
+	compact := m.width < 80 || m.height < 20
+	radius := defaultRingRadius
+	if compact {
+		radius = 3
+	}
+	ring := renderRingSized(fraction, lipgloss.NewStyle().Foreground(accent), trackStyle, []string{
 		lipgloss.NewStyle().Foreground(accent).Bold(true).Render(wordmark),
 		lipgloss.NewStyle().Bold(true).Render(digits),
 		lipgloss.NewStyle().Foreground(colorDim).Render(centerSub),
-	})
+	}, radius)
 
 	sections := []string{ring}
 
@@ -119,7 +125,12 @@ func (m Model) renderTimerControls(session *models.TimerSession) string {
 	}
 
 	// Idle: start + duration capsules (capsules are 3 rows tall; Center keeps
-	// the 1-row START button vertically aligned with them).
+	// the 1-row START button vertically aligned with them). Compact layouts
+	// drop the capsules to keep the frame tight.
+	if m.compact() {
+		return primary("▶ START", colorFocus)
+	}
+
 	start := primary("▶ START", colorFocus)
 	capsules := []string{}
 	for _, c := range []struct {
@@ -135,6 +146,11 @@ func (m Model) renderTimerControls(session *models.TimerSession) string {
 	return lipgloss.JoinHorizontal(lipgloss.Center,
 		append([]string{start, "   "}, capsules...)...,
 	)
+}
+
+// compact reports whether the terminal is too small for the full layout.
+func (m Model) compact() bool {
+	return m.width < 80 || m.height < 20
 }
 
 // progressBar renders the linear progress bar under the timer.

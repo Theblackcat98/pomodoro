@@ -28,6 +28,8 @@ func (m Model) View() string {
 		body = m.renderTasksView()
 	case TabStats:
 		body = m.renderStatsView()
+	case TabSettings:
+		body = m.renderSettingsView()
 	case TabHelp:
 		body = m.renderHelpView()
 	default:
@@ -72,7 +74,7 @@ func (m Model) renderHeader() string {
 	brand := brandStyle.Render("🍅 Pomodoro")
 
 	var tabs string
-	for i, name := range []string{"Timer", "Tasks", "Stats", "Help"} {
+	for i, name := range tabNames {
 		style := tabStyle
 		if Tab(i) == m.tab {
 			style = activeTabStyle.Foreground(m.currentAccent())
@@ -80,7 +82,10 @@ func (m Model) renderHeader() string {
 		tabs += style.Render(name)
 	}
 
-	right := toastStyle.Render("🍅 " + itoa(m.todayCount()) + " today")
+	right := ""
+	if !m.compact() {
+		right = toastStyle.Render("🍅 " + itoa(m.todayCount()) + " today")
+	}
 
 	brandWidth := lipgloss.Width(brand)
 	tabsWidth := lipgloss.Width(tabs)
@@ -151,7 +156,24 @@ func (m Model) statusChip() (string, lipgloss.Color) {
 }
 
 // contextualHints returns the key hints valid for the current screen and mode.
+// Compact terminals only get the two most important hints.
 func (m Model) contextualHints() string {
+	if m.compact() {
+		switch {
+		case m.confirmQuit:
+			return hintJoin(hint("y", "quit"), hint("n", "stay"))
+		case m.adding:
+			return hintJoin(hint("enter", "save"), hint("esc", "cancel"))
+		}
+		switch m.tab {
+		case TabTimer:
+			return hintJoin(hint("space", "start/pause"), hint("?", "help"))
+		case TabTasks:
+			return hintJoin(hint("a", "add"), hint("?", "help"))
+		default:
+			return hintJoin(hint("?", "help"))
+		}
+	}
 	switch {
 	case m.confirmQuit:
 		return hintJoin(hint("y", "quit"), hint("n/esc", "stay"))
@@ -168,9 +190,11 @@ func (m Model) contextualHints() string {
 	case TabTasks:
 		return hintJoin(hint("a", "add"), hint("x", "toggle"), hint("d", "delete"), hint("enter", "focus"), hint("j/k", "move"), hint("?", "help"))
 	case TabStats:
-		return hintJoin(hint("?", "help"))
+		return hintJoin(hint("j/k", "select"), hint("?", "help"))
+	case TabSettings:
+		return hintJoin(hint("j/k", "select"), hint("+/-", "adjust"), hint("space", "toggle"), hint("?", "help"))
 	default:
-		return hintJoin(hint("esc", "back"), hint("?", "help"))
+		return hintJoin(hint("j/k", "scroll"), hint("esc", "back"), hint("?", "help"))
 	}
 }
 
