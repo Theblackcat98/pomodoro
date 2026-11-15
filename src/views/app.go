@@ -18,6 +18,7 @@ import (
 	"pomodoro/src/components"
 	"pomodoro/src/models"
 	"pomodoro/src/services"
+	"pomodoro/src/utils"
 )
 
 // Tab identifies a main view.
@@ -127,11 +128,28 @@ type Model struct {
 	spinActive  bool
 	checkAnimID string // task row check animation (○→◐→●), empty = off
 
+	// Shared animation engine (anim.go): animRunning guards the single tick
+	// chain; lastDigits drives the MM:SS digit-change flash.
+	anim        animSet
+	animRunning bool
+	lastDigits  string
+
+	// tabHits are the header tab column ranges captured during the last
+	// render, used to route mouse clicks (mouse support is config-gated).
+	tabHits []tabHit
+
 	// Phase-4 view state
 	sessTable      table.Model    // recent sessions (Stats)
 	helpViewport   viewport.Model // scrollable cheat sheet (Help)
 	help           help.Model     // short help row (Help footer)
 	settingsCursor int            // focused row (Settings)
+}
+
+// tabHit is the rendered column range of one header tab.
+type tabHit struct {
+	tab    Tab
+	startX int
+	endX   int
 }
 
 // serviceEvents adapts services.TimerObserver callbacks (invoked on the
@@ -197,6 +215,8 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 		taskList: components.NewTaskList(),
 		addEst:   1,
 		clock:    time.Now(),
+		anim:     newAnimSet(),
+		tabHits:  computeTabHits(),
 		progress: progress.New(progress.WithDefaultGradient(), progress.WithWidth(40)),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		sessTable: table.New(
@@ -254,6 +274,15 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 			logError("save default settings", store.SaveSettings(m.settings))
 		}
 	}
+	// One-time welcome hint on the very first run (a toast, not a blocking
+	// wizard — the best TUIs prefer zero-friction tips over modals).
+	if !m.settings.SeenIntro {
+		m.pendingToast = "space to start · tab to switch views · ? for help"
+		m.settings.SeenIntro = true
+		if store != nil {
+			logError("save intro flag", store.SaveSettings(m.settings))
+		}
+	}
 	m.timer.SetSettings(m.settings)
 	m.notifier = components.NewNotifier(m.settings.NotificationType)
 	m.helpViewport.SetContent(helpContent())
@@ -268,11 +297,16 @@ type showPendingToastMsg struct{}
 
 // Init starts the event bridge, the wall clock, and the pending-toast relay.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		waitForEvent(m.events),
 		clockTick(),
 		func() tea.Msg { return showPendingToastMsg{} },
-	)
+	}
+	// Restore the mouse mode chosen in settings (wheel + tab clicks).
+	if m.settings != nil && m.settings.Mouse {
+		cmds = append(cmds, tea.EnableMouseCellMotion)
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update is the central message router.
@@ -320,13 +354,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.reconcileService(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		cmds = append(cmds, m.syncTimerAnim())
 		return m, tea.Batch(cmds...)
+
+	case animTickMsg:
+		// The single animation frame driver. Re-armed ONLY here while
+		// something is still animating (mirrors the spinner-chain rule).
+		paused := m.sessionPaused()
+		m.anim.step(paused)
+		if m.anim.active(paused) {
+			return m, tea.Batch(animTickCmd(), waitForEvent(m.events))
+		}
+		m.animRunning = false
+		return m, waitForEvent(m.events)
+
+	case tea.MouseMsg:
+		if cmd := m.handleMouse(msg); cmd != nil {
+			return m, tea.Batch(cmd, waitForEvent(m.events))
+		}
 
 	case models.SessionStartedMsg:
 		m.flash = ""
 		m.spinActive = false
 		m.seenSessionID = msg.Session.ID
 		m.handledCompletionID = ""
+		m.anim.ring.snap(0)
+		m.lastDigits = ""
 		return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
 
 	case models.SessionPausedMsg, models.SessionResumedMsg:
@@ -345,14 +398,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handledCompletionID = ""
 		m.flash = ""
 		m.spinActive = false
-		return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
+		m.lastDigits = ""
+		// Sweep the ring back to empty.
+		m.anim.ring.setTarget(0)
+		return m, tea.Batch(m.progress.SetPercent(0), m.kickAnim(), waitForEvent(m.events))
 
 	case models.TimerTickMsg:
 		// The service already advanced the session; ease the bar toward the
 		// new fraction.
 		if cmd := m.updateProgress(); cmd != nil {
-			return m, tea.Batch(cmd, waitForEvent(m.events))
+			return m, tea.Batch(cmd, m.syncTimerAnim(), waitForEvent(m.events))
 		}
+		return m, tea.Batch(m.syncTimerAnim(), waitForEvent(m.events))
 
 	case progress.FrameMsg:
 		pm, cmd := m.progress.Update(msg)
@@ -448,13 +505,19 @@ func (m *Model) applySessionCompletion(session *models.TimerSession) tea.Cmd {
 	}
 	m.notifier.PlaySessionCompleteSound()
 
+	// Completion motion: the ring sweeps full while its accent morphs from
+	// the finished session's color to the next one's.
+	m.anim.ring.setTarget(1)
+	m.anim.startPulse(sessionAccent(session.Type, models.Running), sessionAccent(m.timer.SuggestNext(), ""))
+	m.lastDigits = ""
+
 	// Show the transition spinner only when a session will auto-start.
 	autoStart := (session.Type == models.FocusSession && m.settings.AutoStartBreaks) ||
 		(session.Type != models.FocusSession && m.settings.AutoStartFocus)
 	m.spinActive = autoStart
 
 	m.flashSeq++
-	cmds = append(cmds, flashCmd(m.flashSeq))
+	cmds = append(cmds, flashCmd(m.flashSeq), m.kickAnim())
 	if autoStart {
 		cmds = append(cmds, spinner.Tick)
 	}
@@ -465,6 +528,11 @@ func (m *Model) applySessionCompletion(session *models.TimerSession) tea.Cmd {
 func (m Model) onFlashExpired(msg flashExpireMsg) (tea.Model, tea.Cmd) {
 	if msg.seq == m.flashSeq {
 		m.flash = ""
+		// Ready state: the ring eases back to empty (unless a new session
+		// already started, in which case its own snap wins).
+		if s := m.timer.GetCurrentSession(); s == nil || s.Status == models.Completed {
+			m.anim.ring.setTarget(0)
+		}
 		if done := m.timer.GetCurrentSession(); done != nil && done.Status == models.Completed {
 			autoStart := (done.Type == models.FocusSession && m.settings.AutoStartBreaks) ||
 				(done.Type != models.FocusSession && m.settings.AutoStartFocus)
@@ -514,13 +582,114 @@ func (m *Model) updateProgress() tea.Cmd {
 	return m.progress.SetPercent(fraction)
 }
 
+// kickAnim starts the shared animation loop if it is not already running.
+// Handlers call it whenever they touch an animated value; the loop stops
+// itself from the animTickMsg handler once everything has settled.
+func (m *Model) kickAnim() tea.Cmd {
+	if m.animRunning {
+		return nil
+	}
+	m.animRunning = true
+	return animTickCmd()
+}
+
+// sessionPaused reports whether the current session exists and is paused.
+func (m *Model) sessionPaused() bool {
+	s := m.timer.GetCurrentSession()
+	return s != nil && s.Status == models.Paused
+}
+
+// syncTimerAnim mirrors the service's session into the animated ring and the
+// MM:SS digit-flash state. Running sessions ease toward the new fraction;
+// paused ones freeze; completed ones sweep full for the transition flash.
+func (m *Model) syncTimerAnim() tea.Cmd {
+	s := m.timer.GetCurrentSession()
+	switch {
+	case s == nil:
+		m.anim.ring.setTarget(0)
+	case s.Status == models.Completed:
+		m.anim.ring.setTarget(1)
+	case s.Status == models.Running:
+		if s.Duration > 0 {
+			m.anim.ring.setTarget(1 - float64(s.Remaining)/float64(s.Duration))
+		}
+		digits := utils.FormatDuration(s.Remaining)
+		m.anim.flashDigits(digits, m.lastDigits)
+		m.lastDigits = digits
+	}
+	return m.kickAnim()
+}
+
+// handleMouse routes wheel scrolls to the active view's scroller and left
+// clicks to the header tabs. Mouse support only reaches Update when enabled
+// in settings (every action has a keyboard equivalent).
+func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	if msg.Action != tea.MouseActionPress {
+		return nil
+	}
+	switch msg.Button {
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		key := "up"
+		if msg.Button == tea.MouseButtonWheelDown {
+			key = "down"
+		}
+		keyMsg := tea.KeyMsg{Type: keyToType(key), Runes: []rune{rune(key[0])}}
+		var cmd tea.Cmd
+		switch m.tab {
+		case TabTasks:
+			cmd = m.taskList.Update(keyMsg)
+		case TabStats:
+			m.sessTable, cmd = m.sessTable.Update(keyMsg)
+		case TabHelp:
+			m.helpViewport, cmd = m.helpViewport.Update(keyMsg)
+		}
+		return cmd
+	case tea.MouseButtonLeft:
+		for _, hit := range m.tabHits {
+			if msg.X >= hit.startX && msg.X <= hit.endX && msg.Y == 0 {
+				m.anim.tabSlide = tabSlideDir(m.tab, hit.tab)
+				m.tab = hit.tab
+				return m.kickAnim()
+			}
+		}
+	}
+	return nil
+}
+
+// tabSlideDir returns the slide direction (+1 forward, -1 back) between tabs.
+func tabSlideDir(from, to Tab) float64 {
+	if to > from {
+		return 1
+	}
+	if to < from {
+		return -1
+	}
+	return 0
+}
+
+// keyToType maps simple key names to tea.KeyType for synthetic messages.
+func keyToType(key string) tea.KeyType {
+	switch key {
+	case "up":
+		return tea.KeyUp
+	case "down":
+		return tea.KeyDown
+	default:
+		return tea.KeyRunes
+	}
+}
+
 // setToast shows a transient message and schedules its expiry as a cmd (no
 // goroutines — a rapid sequence simply supersedes earlier toasts).
 func (m *Model) setToast(text string) tea.Cmd {
 	m.toast = text
 	m.toastSeq++
+	m.anim.toastSlide = 1 // slide in from the right
 	seq := m.toastSeq
-	return tea.Tick(toastDuration, func(time.Time) tea.Msg { return toastExpireMsg{seq} })
+	return tea.Batch(
+		tea.Tick(toastDuration, func(time.Time) tea.Msg { return toastExpireMsg{seq} }),
+		m.kickAnim(),
+	)
 }
 
 // toastf formats and shows a toast; the returned cmd drives its expiry.
@@ -606,11 +775,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, waitForEvent(m.events)
 
 	case "tab":
-		m.tab = (m.tab + 1) % tabCount
-		return m, waitForEvent(m.events)
+		next := (m.tab + 1) % tabCount
+		m.anim.tabSlide = tabSlideDir(m.tab, next)
+		m.tab = next
+		return m, tea.Batch(m.kickAnim(), waitForEvent(m.events))
 	case "shift+tab":
-		m.tab = (m.tab + tabCount - 1) % tabCount
-		return m, waitForEvent(m.events)
+		prev := (m.tab + tabCount - 1) % tabCount
+		m.anim.tabSlide = tabSlideDir(m.tab, prev)
+		m.tab = prev
+		return m, tea.Batch(m.kickAnim(), waitForEvent(m.events))
 
 	case "q":
 		if m.sessionRunning() {
@@ -684,7 +857,8 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 			m.spinActive = false
 			m.seenSessionID = ""
 			m.handledCompletionID = ""
-			return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
+			m.anim.ring.setTarget(0)
+			return m, tea.Batch(m.progress.SetPercent(0), m.kickAnim(), waitForEvent(m.events))
 		}
 
 	case "s":
@@ -741,9 +915,8 @@ func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		if task := m.taskList.GetSelected(); task != nil {
 			m.deleteArm = true
 			m.confirmMsg = task.Title
-			cmds = append(cmds, m.toastf("Delete %q? y to confirm", task.Title))
 		}
-		return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
+		return m, waitForEvent(m.events)
 
 	case "enter":
 		if task := m.taskList.GetSelected(); task != nil {

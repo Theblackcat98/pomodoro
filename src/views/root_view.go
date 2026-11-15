@@ -1,10 +1,13 @@
 package views
 
 import (
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"pomodoro/src/models"
 )
 
@@ -47,8 +50,33 @@ func (m Model) View() string {
 		body = lipgloss.Place(m.width, contentHeight, lipgloss.Center, lipgloss.Center, body)
 	}
 
-	if m.confirmQuit {
-		body = m.renderQuitConfirm()
+	// Tab-switch slide: the body glides a few columns in from the direction
+	// of travel and settles to center.
+	if m.anim.tabSlide != 0 {
+		pad := int(math.Abs(m.anim.tabSlide) * 5)
+		if pad > 0 {
+			if m.anim.tabSlide > 0 {
+				body = lipgloss.NewStyle().PaddingLeft(pad).Render(body)
+			} else {
+				body = lipgloss.NewStyle().PaddingRight(pad).Render(body)
+			}
+		}
+	}
+
+	// Confirmation modals replace the body (keys are trapped by handleKey).
+	switch {
+	case m.confirmQuit:
+		body = m.renderConfirmModal(
+			"Session still running",
+			"Quit anyway? The session will not be recorded.",
+			colorPaused,
+		)
+	case m.deleteArm:
+		body = m.renderConfirmModal(
+			"Delete task",
+			fmt.Sprintf("%q will be removed permanently.", m.confirmMsg),
+			colorFocus,
+		)
 	}
 
 	doc := lipgloss.JoinVertical(lipgloss.Left, header, body, status)
@@ -104,6 +132,8 @@ func (m Model) renderHeader() string {
 }
 
 // renderStatusBar draws the state chip, contextual key hints, and the clock.
+// A visible toast temporarily replaces the hints (both would never fit) and
+// is truncated to the free space so the bar always stays a single row.
 func (m Model) renderStatusBar() string {
 	chipText, chipColor := m.statusChip()
 	chip := statusChipStyle.
@@ -111,22 +141,36 @@ func (m Model) renderStatusBar() string {
 		Foreground(lipgloss.Color("#FFF7DB")).
 		Render(chipText)
 
-	hints := m.contextualHints()
-
 	clock := statusHintStyle.Render(m.clock.Format("15:04"))
+
+	middle := m.contextualHints()
+	if m.toast != "" {
+		// Toast slides in from the right (anim.go) before settling.
+		toast := m.toast
+		if off := int(m.anim.toastSlide * 10); off > 0 {
+			toast = strings.Repeat(" ", off) + toast
+		}
+		avail := m.width - lipgloss.Width(chip) - lipgloss.Width(clock) - 6
+		if avail < 8 {
+			avail = 8
+		}
+		if w := lipgloss.Width(toast); w > avail {
+			toast = truncate(toast, avail-1) + "…"
+		}
+		middle = toastStyle.Render(toast)
+	}
 
 	// Account for the bar's own horizontal padding (1 column each side) so
 	// the clock never wraps to the next row.
-	used := lipgloss.Width(chip) + 1 + lipgloss.Width(hints) + lipgloss.Width(m.toast) + 1 + lipgloss.Width(clock)
+	used := lipgloss.Width(chip) + 1 + lipgloss.Width(middle) + 1 + lipgloss.Width(clock)
 	gap := max(1, m.width-used-2)
 
 	bar := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		chip,
 		" ",
-		hints,
+		middle,
 		strings.Repeat(" ", gap),
-		m.toast,
 		" ",
 		clock,
 	)
@@ -198,15 +242,35 @@ func (m Model) contextualHints() string {
 	}
 }
 
-// renderQuitConfirm shows the quit-while-running confirmation modal.
-func (m Model) renderQuitConfirm() string {
+// computeTabHits derives the header tabs' column ranges deterministically
+// from the same layout math renderHeader uses (View copies the model, so
+// positions captured during rendering would be lost). Mouse clicks are
+// matched against these.
+func computeTabHits() []tabHit {
+	hits := make([]tabHit, 0, tabCount)
+	x := 1 + // headerStyle left padding
+		lipgloss.Width("🍅 Pomodoro") + // brand
+		2 // gap between brand and tabs
+	for i, name := range tabNames {
+		w := lipgloss.Width(name) + 2 // tabStyle horizontal padding
+		hits = append(hits, tabHit{tab: Tab(i), startX: x, endX: x + w - 1})
+		x += w
+	}
+	return hits
+}
+
+// renderConfirmModal draws the shared centered confirmation panel used for
+// quit-while-running and task deletion. The safe answer is always offered
+// first and Esc backs out.
+func (m Model) renderConfirmModal(title, message string, accent lipgloss.Color) string {
 	panel := panelStyle.
-		BorderForeground(colorPaused).
-		Width(44).
+		BorderForeground(accent).
+		Width(46).
 		Align(lipgloss.Center).
 		Render(
-			"Session still running — quit anyway?\n\n" +
-				hintJoin(hint("y", "quit"), hint("n/esc", "keep going")),
+			lipgloss.NewStyle().Bold(true).Foreground(accent).Render(title) + "\n" +
+				message + "\n\n" +
+				hintJoin(hint("y", "confirm"), hint("n/esc", "cancel")),
 		)
 	return lipgloss.Place(m.width, max(1, m.height-4), lipgloss.Center, lipgloss.Center, panel)
 }
@@ -214,4 +278,36 @@ func (m Model) renderQuitConfirm() string {
 // itoa is a tiny wrapper so view code reads cleanly.
 func itoa(n int) string {
 	return strconv.Itoa(n)
+}
+
+// truncate cuts a (possibly ANSI-styled) string to at most width printable
+// columns, preserving escape sequences.
+func truncate(s string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	var out strings.Builder
+	cols := 0
+	inEscape := false
+	for _, r := range s {
+		if inEscape {
+			out.WriteRune(r)
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			inEscape = true
+			out.WriteRune(r)
+			continue
+		}
+		w := runewidth.RuneWidth(r)
+		if cols+w > width {
+			break
+		}
+		cols += w
+		out.WriteRune(r)
+	}
+	return out.String()
 }

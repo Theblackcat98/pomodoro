@@ -36,8 +36,9 @@ task attribution.
 
 ![Settings](docs/screenshots/settings.png)
 
-Durations, long-break interval, auto-start behavior, and notifications — every
-change applies and persists immediately.
+Durations, long-break interval, auto-start behavior, notifications, and an
+opt-in mouse mode (wheel scrolling + clickable tabs) — every change applies and
+persists immediately.
 
 ### Help
 

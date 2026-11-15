@@ -19,6 +19,7 @@ const (
 	setRowAutoBreak
 	setRowAutoFocus
 	setRowNotify
+	setRowMouse
 	setRowCount
 )
 
@@ -41,6 +42,7 @@ func (m Model) renderSettingsView() string {
 		{"Auto-start breaks", boolMark(m.settings.AutoStartBreaks)},
 		{"Auto-start focus", boolMark(m.settings.AutoStartFocus)},
 		{"Notification", string(m.settings.NotificationType)},
+		{"Mouse", boolMark(m.settings.Mouse)},
 	}
 
 	lines := []string{
@@ -54,7 +56,15 @@ func (m Model) renderSettingsView() string {
 		if i == m.settingsCursor {
 			cursor = lipgloss.NewStyle().Foreground(colorFocus).Bold(true).Render("❯ ")
 			label = lipgloss.NewStyle().Foreground(colorText).Bold(true).Render(fmt.Sprintf("%-20s", r.label))
-			value = lipgloss.NewStyle().Foreground(colorText).Render(r.value)
+			// The value just changed: flash it bright and let it settle.
+			if i == m.anim.flashRow && m.anim.flashValue > 0 {
+				value = lipgloss.NewStyle().
+					Foreground(blendAdaptive(colorDim, colorText, m.anim.flashValue)).
+					Bold(true).
+					Render(r.value)
+			} else {
+				value = lipgloss.NewStyle().Foreground(colorText).Render(r.value)
+			}
 		}
 		lines = append(lines, cursor+label+"  "+value)
 	}
@@ -102,11 +112,13 @@ func (m *Model) adjustSetting(dir int) tea.Cmd {
 	default:
 		return nil
 	}
-	return m.saveSettings()
+	m.flashChangedRow()
+	return tea.Batch(m.saveSettings(), m.kickAnim())
 }
 
 // toggleSetting flips the focused boolean or cycles the notification mode.
 func (m *Model) toggleSetting() tea.Cmd {
+	var extra tea.Cmd
 	switch m.settingsCursor {
 	case setRowAutoBreak:
 		m.settings.AutoStartBreaks = !m.settings.AutoStartBreaks
@@ -121,10 +133,25 @@ func (m *Model) toggleSetting() tea.Cmd {
 		default:
 			m.settings.NotificationType = models.SoundNotification
 		}
+	case setRowMouse:
+		m.settings.Mouse = !m.settings.Mouse
+		// Flip the terminal mouse mode alongside the setting.
+		if m.settings.Mouse {
+			extra = tea.EnableMouseCellMotion
+		} else {
+			extra = tea.DisableMouse
+		}
 	default:
 		return nil
 	}
-	return m.saveSettings()
+	m.flashChangedRow()
+	return tea.Batch(m.saveSettings(), extra, m.kickAnim())
+}
+
+// flashChangedRow arms the value flash for the focused settings row.
+func (m *Model) flashChangedRow() {
+	m.anim.flashRow = m.settingsCursor
+	m.anim.flashValue = 1
 }
 
 // saveSettings applies settings to the service/notifier and persists them.

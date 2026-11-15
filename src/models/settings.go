@@ -20,6 +20,8 @@ type Settings struct {
 	AutoStartFocus     bool             `json:"auto_start_focus"`     // After breaks, default: false
 	NotificationType   NotificationType `json:"notification_type"`    // Default: "sound"
 	Theme              string           `json:"theme"`                // Default: "default"
+	Mouse              bool             `json:"mouse"`                // Mouse: wheel scroll + tab clicks
+	SeenIntro          bool             `json:"seen_intro"`           // First-run hint already shown
 	CreatedAt          time.Time        `json:"created_at"`
 	UpdatedAt          time.Time        `json:"updated_at"`
 }

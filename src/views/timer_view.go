@@ -1,13 +1,35 @@
 package views
 
 import (
+	"math"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"pomodoro/src/models"
 	"pomodoro/src/utils"
 )
 
+// styledDigits renders "MM:SS" letter-spaced; digits that changed in the last
+// tick flash in the session accent and settle back as the flash decays.
+func (m Model) styledDigits(digits string, accent lipgloss.Color) string {
+	runes := []rune(digits)
+	parts := make([]string, 0, len(runes)*2)
+	for i, r := range runes {
+		style := lipgloss.NewStyle().Bold(true)
+		if i < len(m.anim.digitFlash) && m.anim.digitFlash[i] > 0.05 {
+			style = style.Foreground(accent)
+		}
+		if i > 0 {
+			parts = append(parts, " ")
+		}
+		parts = append(parts, style.Render(string(r)))
+	}
+	return strings.Join(parts, "")
+}
+
 // renderTimerView draws the hero screen: ring with big digits, mode wordmark,
-// current task, controls, and a progress bar.
+// current task, controls, and a progress bar. Motion (spring-eased fill,
+// completion pulse, paused breathing, digit flash) comes from anim.go.
 func (m Model) renderTimerView() string {
 	session := m.timer.GetCurrentSession()
 	active := session != nil && (session.Status == models.Running || session.Status == models.Paused)
@@ -17,22 +39,15 @@ func (m Model) renderTimerView() string {
 		wordmark    string
 		centerSub   string
 		digits      string
-		fraction    float64
 		accent      lipgloss.Color
 	)
 
 	if active {
 		sessionType = session.Type
 		wordmark = utils.FormatSessionType(sessionType)
-		digits = spacedTime(utils.FormatDuration(session.Remaining))
-		switch session.Status {
-		case models.Running:
-			centerSub = "RUNNING"
-		case models.Paused:
+		centerSub = "RUNNING"
+		if session.Status == models.Paused {
 			centerSub = "PAUSED"
-		}
-		if session.Duration > 0 {
-			fraction = 1 - float64(session.Remaining)/float64(session.Duration)
 		}
 		accent = sessionAccent(sessionType, session.Status)
 	} else {
@@ -40,16 +55,33 @@ func (m Model) renderTimerView() string {
 		next := m.timer.SuggestNext()
 		sessionType = next
 		wordmark = utils.FormatSessionType(next)
-		digits = spacedTime(utils.FormatDuration(m.settings.DurationFor(next)))
 		centerSub = "READY"
-		fraction = 0
 		accent = sessionAccent(next, "")
 	}
 
+	// Completion pulse: the ring accent lerps from the finished session's
+	// color to the next one's while the flash decays.
+	if m.anim.pulse > 0 {
+		accent = blendColors(m.anim.pulseFrom, m.anim.pulseTo, 1-m.anim.pulse)
+	}
+
+	// The elapsed arc is spring-eased: it sweeps full on completion and
+	// empties on reset instead of snapping.
+	fraction := m.anim.ring.pos
+
+	// Paused "breathing": the track smoothly brightens and dims.
 	trackStyle := lipgloss.NewStyle().Foreground(colorFaint)
-	// Paused "breathing": the track gently brightens and dims.
-	if active && session.Status == models.Paused && m.clock.Second()%2 == 1 {
-		trackStyle = lipgloss.NewStyle().Foreground(colorDim)
+	if active && session.Status == models.Paused {
+		breathe := 0.5 + 0.5*float64(math.Sin(2*math.Pi*m.anim.breathe))
+		trackStyle = lipgloss.NewStyle().Foreground(
+			blendAdaptive(colorFaint, colorDim, breathe),
+		)
+	}
+
+	if active {
+		digits = m.styledDigits(utils.FormatDuration(session.Remaining), accent)
+	} else {
+		digits = spacedTime(utils.FormatDuration(m.settings.DurationFor(sessionType)))
 	}
 
 	compact := m.width < 80 || m.height < 20
