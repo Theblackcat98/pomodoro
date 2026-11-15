@@ -46,7 +46,7 @@ func setupLogging() {
 		return
 	}
 	l := clog.New(f)
-	l.SetLevel(clog.InfoLevel)
+	l.SetLevel(clog.DebugLevel)
 	l.SetReportTimestamp(false)
 	views.SetLogger(l)
 	components.SetLogger(l)

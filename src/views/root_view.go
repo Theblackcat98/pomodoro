@@ -70,7 +70,7 @@ func (m Model) View() tea.View {
 	case m.confirmQuit:
 		body = m.renderConfirmModal(
 			"Session still running",
-			"Quit anyway? The session will not be recorded.",
+			"Quit anyway? The session is saved\nand can be resumed next launch.",
 			colorPaused,
 		)
 	case m.deleteArm:

@@ -226,7 +226,7 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 		timer:    timer,
 		store:    store,
 		events:   events.ch,
-		tab:      TabTimer,
+		tab:      initialTab(),
 		taskList: components.NewTaskList(),
 		addEst:   1,
 		clock:    time.Now(),
@@ -453,6 +453,21 @@ func (m *Model) writeStatusFile() {
 // showPendingToastMsg tells the first Update to surface toasts queued during
 // construction (Init cannot mutate the program's model directly).
 type showPendingToastMsg struct{}
+
+// initialTab resolves the POMODORO_TAB env override (default: timer).
+func initialTab() Tab {
+	switch os.Getenv("POMODORO_TAB") {
+	case "tasks":
+		return TabTasks
+	case "stats":
+		return TabStats
+	case "settings":
+		return TabSettings
+	case "help":
+		return TabHelp
+	}
+	return TabTimer
+}
 
 // Init starts the event bridge, the wall clock, and the pending-toast relay.
 func (m Model) Init() tea.Cmd {
@@ -1047,7 +1062,7 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 		if m.pendingResume != nil {
 			s := m.pendingResume
 			m.pendingResume = nil
-			err := m.timer.StartSessionForTask(s.TaskID, s.Type, s.Remaining)
+			err := m.timer.StartSessionFromSnapshot(s)
 			if err != nil {
 				return m, tea.Batch(m.errToast("resume session", err), waitForEvent(m.events))
 			}

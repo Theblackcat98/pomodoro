@@ -29,6 +29,11 @@ type TimerService interface {
 	// is baked into the session before any observer fires, so completion
 	// events always carry the attribution.
 	StartSessionForTask(taskID string, sessionType models.SessionType, duration time.Duration) error
+	// StartSessionFromSnapshot installs a previously persisted session
+	// (resume after quit/crash). Duration, Remaining and Elapsed are kept
+	// exactly as snapshotted so progress and stats reflect the original
+	// session.
+	StartSessionFromSnapshot(snapshot *models.TimerSession) error
 	PauseSession() error
 	ResumeSession() error
 	// SkipSession ends the current session now: it counts as completed (saved
@@ -117,6 +122,28 @@ func (t *ConcreteTimerService) StartSessionForTask(taskID string, sessionType mo
 	t.mu.Unlock()
 
 	notify(observers, func(o TimerObserver) { o.OnSessionStarted(session) })
+	return nil
+}
+
+// StartSessionFromSnapshot resumes a snapshotted session as-is.
+func (t *ConcreteTimerService) StartSessionFromSnapshot(snapshot *models.TimerSession) error {
+	if snapshot == nil {
+		return errors.New("snapshot is nil")
+	}
+	t.mu.Lock()
+	if t.currentSession != nil && t.currentSession.Status == models.Running {
+		t.mu.Unlock()
+		return errors.New("a session is already running")
+	}
+	resumed := *snapshot
+	resumed.Status = models.Running
+	t.currentSession = &resumed
+	t.ensureTicker()
+
+	observers := append([]TimerObserver(nil), t.observers...)
+	t.mu.Unlock()
+
+	notify(observers, func(o TimerObserver) { o.OnSessionStarted(&resumed) })
 	return nil
 }
 
