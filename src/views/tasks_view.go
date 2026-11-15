@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"pomodoro/src/models"
 )
 
 // renderTasksView draws the task list, open/done counts, and the new-task bar.
@@ -52,17 +51,4 @@ func (m Model) renderAddBar() string {
 		estimate + "  " + statusHintStyle.Render("[tab] field · [enter] save · [esc] cancel"),
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
-}
-
-// openDoneCounts returns "N open · M done" for the tasks header.
-func (m Model) openDoneCounts() (int, int) {
-	open, done := 0, 0
-	for _, t := range m.tasks {
-		if t.Status == models.DoneStatus {
-			done++
-		} else {
-			open++
-		}
-	}
-	return open, done
 }

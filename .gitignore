@@ -10,6 +10,12 @@ bin/
 dist/
 build/
 
+# Compiled app binary at the repo root
+/pomodoro
+
+# State-file recovery scratch
+*.corrupt-*
+
 # Go
 *.test
 *.prof

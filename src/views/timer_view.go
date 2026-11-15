@@ -1,8 +1,6 @@
 package views
 
 import (
-	"strings"
-
 	"github.com/charmbracelet/lipgloss"
 	"pomodoro/src/models"
 	"pomodoro/src/utils"
@@ -151,21 +149,6 @@ func (m Model) renderTimerControls(session *models.TimerSession) string {
 // compact reports whether the terminal is too small for the full layout.
 func (m Model) compact() bool {
 	return m.width < 80 || m.height < 20
-}
-
-// progressBar renders the linear progress bar under the timer.
-func progressBar(fraction float64, width int, color lipgloss.Color) string {
-	if fraction < 0 {
-		fraction = 0
-	}
-	if fraction > 1 {
-		fraction = 1
-	}
-	filled := int(fraction * float64(width))
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	styled := "▕" + lipgloss.NewStyle().Foreground(color).Render(bar) + "▏"
-	pct := itoa(int(fraction*100)) + "%"
-	return styled + " " + lipgloss.NewStyle().Foreground(colorDim).Render(pct)
 }
 
 // breakSuggestion returns the rotating break activity hint.

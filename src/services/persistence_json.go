@@ -21,9 +21,10 @@ const maxStoredSessions = 1000
 // dataset is small (tasks, settings, capped session history), so synchronous
 // writes are cheap and keep the file always consistent.
 type JSONPersistence struct {
-	mu   sync.Mutex
-	path string
-	data AppData
+	mu            sync.Mutex
+	path          string
+	data          AppData
+	corruptBackup string // set when the state file was unreadable and moved aside
 }
 
 // Compile-time check that JSONPersistence implements PersistenceService.
@@ -64,7 +65,17 @@ func NewJSONPersistence(path string) (*JSONPersistence, error) {
 	}
 
 	if err := json.Unmarshal(raw, &p.data); err != nil {
-		return nil, fmt.Errorf("parse state file %s: %w", path, err)
+		// A corrupt state file must not make the app unusable: move it aside
+		// (so nothing is silently destroyed) and start from defaults.
+		backup := fmt.Sprintf("%s.corrupt-%s", path, time.Now().Format("20060102-150405"))
+		renameErr := os.Rename(path, backup)
+		if renameErr != nil {
+			backup = ""
+		}
+		if saveErr := p.save(); saveErr != nil {
+			return nil, fmt.Errorf("parse state file %s: %w (and rewriting defaults failed: %v / %v)", path, err, renameErr, saveErr)
+		}
+		p.corruptBackup = backup
 	}
 	if p.data.Tasks == nil {
 		p.data.Tasks = []*models.Task{}
@@ -336,6 +347,13 @@ func (p *JSONPersistence) ImportData(data *AppData) error {
 		p.data.Sessions = []models.TimerSession{}
 	}
 	return p.save()
+}
+
+// CorruptBackup returns the path the previous state file was moved to when it
+// could not be parsed (empty when the last load was clean). The UI shows it
+// once so the user knows where the old data lives.
+func (p *JSONPersistence) CorruptBackup() string {
+	return p.corruptBackup
 }
 
 // Close flushes any pending state. Data is saved eagerly, so this only

@@ -1,7 +1,9 @@
 package services
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +86,54 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	settings2, _ := p2.GetSettings()
 	if settings2.FocusDuration != 35*time.Minute {
 		t.Fatalf("settings after reload focus = %v, want 35m", settings2.FocusDuration)
+	}
+}
+
+func TestPersistenceCorruptFileRecoversWithBackup(t *testing.T) {
+	path := tempPath(t)
+
+	// Create a store with real data, then corrupt the file on disk.
+	p, err := NewJSONPersistence(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	task := models.NewTask("survivor", "", 1)
+	if err := p.SaveTask(task); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("{not json at all"), 0o600); err != nil {
+		t.Fatalf("corrupt file: %v", err)
+	}
+
+	// Reopening must not fail: the store starts fresh and the old file is
+	// moved aside, not destroyed.
+	p2, err := NewJSONPersistence(path)
+	if err != nil {
+		t.Fatalf("reopen corrupt: %v (app must recover, not abort)", err)
+	}
+	backup := p2.CorruptBackup()
+	if backup == "" {
+		t.Fatal("CorruptBackup = empty, want the moved-aside path")
+	}
+	raw, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if !strings.Contains(string(raw), "{not json at all") {
+		t.Fatalf("backup does not contain the original bytes: %q", raw)
+	}
+
+	// The recovered store has defaults and no tasks, and works fine.
+	tasks, err := p2.GetTasks(TaskFilter{})
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("tasks after recovery = %v, %v; want empty", tasks, err)
+	}
+	if err := p2.SaveTask(task); err != nil {
+		t.Fatalf("SaveTask after recovery: %v", err)
+	}
+	// The main state file parses cleanly again.
+	if _, err := NewJSONPersistence(path); err != nil {
+		t.Fatalf("reopen after recovery: %v", err)
 	}
 }
 

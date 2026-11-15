@@ -17,8 +17,8 @@ var (
 	colorDone       = lipgloss.Color("#46A758")
 
 	// Text
-	colorText = lipgloss.AdaptiveColor{Light: "#3F3F3F", Dark: "#EEEEEE"}
-	colorDim  = lipgloss.AdaptiveColor{Light: "#8F8F8F", Dark: "#6E6E6E"}
+	colorText  = lipgloss.AdaptiveColor{Light: "#3F3F3F", Dark: "#EEEEEE"}
+	colorDim   = lipgloss.AdaptiveColor{Light: "#8F8F8F", Dark: "#6E6E6E"}
 	colorFaint = lipgloss.AdaptiveColor{Light: "#B4B4B4", Dark: "#454545"}
 
 	// Brand accent (tabs, selection)

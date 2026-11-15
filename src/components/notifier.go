@@ -49,8 +49,3 @@ func (n *Notifier) PlaySessionCompleteSound() {
 func (n *Notifier) SetNotificationType(notificationType models.NotificationType) {
 	n.notificationType = notificationType
 }
-
-// GetNotificationType returns the current notification type
-func (n *Notifier) GetNotificationType() models.NotificationType {
-	return n.notificationType
-}

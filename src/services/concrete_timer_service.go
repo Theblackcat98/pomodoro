@@ -17,6 +17,7 @@ type TimerObserver interface {
 	OnSessionPaused(session *models.TimerSession)
 	OnSessionResumed(session *models.TimerSession)
 	OnSessionCompleted(session *models.TimerSession)
+	OnSessionAbandoned(session *models.TimerSession)
 }
 
 // TimerService drives Pomodoro sessions: start/pause/resume/stop, per-second
@@ -24,8 +25,17 @@ type TimerObserver interface {
 type TimerService interface {
 	StartSession(sessionType models.SessionType) error
 	StartSessionWithDuration(sessionType models.SessionType, duration time.Duration) error
+	// StartSessionForTask starts a session attributed to a task. The task ID
+	// is baked into the session before any observer fires, so completion
+	// events always carry the attribution.
+	StartSessionForTask(taskID string, sessionType models.SessionType, duration time.Duration) error
 	PauseSession() error
 	ResumeSession() error
+	// SkipSession ends the current session now: it counts as completed (saved
+	// to history, credited, and advancing the break rhythm).
+	SkipSession() error
+	// StopSession abandons the current session: no completion event, no
+	// credit, nothing recorded.
 	StopSession() error
 	GetCurrentSession() *models.TimerSession
 	GetRemainingTime() time.Duration
@@ -41,14 +51,14 @@ type TimerService interface {
 // A single ticker goroutine runs for the lifetime of the service (between the
 // first StartSession and Shutdown); pause/resume only flips the session status.
 type ConcreteTimerService struct {
-	mu               sync.Mutex
-	settings         *models.Settings
-	currentSession   *models.TimerSession
-	focusCompleted   int
-	observers        []TimerObserver
-	running          bool // goroutine lifecycle
-	done             chan struct{}
-	once             sync.Once
+	mu             sync.Mutex
+	settings       *models.Settings
+	currentSession *models.TimerSession
+	focusCompleted int
+	observers      []TimerObserver
+	running        bool // goroutine lifecycle
+	done           chan struct{}
+	once           sync.Once
 }
 
 // Compile-time check that ConcreteTimerService implements TimerService.
@@ -69,12 +79,17 @@ func NewTimerService(settings *models.Settings) TimerService {
 
 // StartSession starts a new Pomodoro session using the configured duration.
 func (t *ConcreteTimerService) StartSession(sessionType models.SessionType) error {
-	return t.StartSessionWithDuration(sessionType, 0)
+	return t.StartSessionForTask("", sessionType, 0)
 }
 
 // StartSessionWithDuration starts a session with an explicit duration
 // (used by the quick-pick capsules). A duration of 0 uses the configured one.
 func (t *ConcreteTimerService) StartSessionWithDuration(sessionType models.SessionType, duration time.Duration) error {
+	return t.StartSessionForTask("", sessionType, duration)
+}
+
+// StartSessionForTask starts a session attributed to taskID (may be empty).
+func (t *ConcreteTimerService) StartSessionForTask(taskID string, sessionType models.SessionType, duration time.Duration) error {
 	t.mu.Lock()
 	if t.currentSession != nil && t.currentSession.Status == models.Running {
 		t.mu.Unlock()
@@ -91,6 +106,7 @@ func (t *ConcreteTimerService) StartSessionWithDuration(sessionType models.Sessi
 		Duration:  duration,
 		Remaining: duration,
 		Status:    models.Running,
+		TaskID:    taskID,
 		StartTime: &now,
 		CreatedAt: now,
 	}
@@ -144,8 +160,37 @@ func (t *ConcreteTimerService) ResumeSession() error {
 	return nil
 }
 
-// StopSession stops (abandons) the current session without counting it as a
-// completed Pomodoro.
+// SkipSession completes the current session immediately: it is recorded with
+// the time actually spent, credited to the task and the break rhythm, and a
+// completion event fires (which may auto-start the next session).
+func (t *ConcreteTimerService) SkipSession() error {
+	t.mu.Lock()
+	if t.currentSession == nil {
+		t.mu.Unlock()
+		return errors.New("no active session to skip")
+	}
+	if t.currentSession.Status == models.Completed {
+		t.mu.Unlock()
+		return nil
+	}
+	now := time.Now()
+	t.currentSession.CompletedAt = &now
+	t.currentSession.Status = models.Completed
+	t.currentSession.Elapsed = t.currentSession.Duration - t.currentSession.Remaining
+	if t.currentSession.Type == models.FocusSession {
+		t.focusCompleted++
+	}
+	session := t.currentSession
+	observers := append([]TimerObserver(nil), t.observers...)
+	t.mu.Unlock()
+
+	notify(observers, func(o TimerObserver) { o.OnSessionCompleted(session) })
+	return nil
+}
+
+// StopSession abandons the current session without counting it as a
+// completed Pomodoro: no completion event fires, nothing is recorded, and the
+// service returns to the ready state.
 func (t *ConcreteTimerService) StopSession() error {
 	t.mu.Lock()
 	if t.currentSession == nil {
@@ -156,14 +201,12 @@ func (t *ConcreteTimerService) StopSession() error {
 		t.mu.Unlock()
 		return nil
 	}
-	now := time.Now()
-	t.currentSession.CompletedAt = &now
-	t.currentSession.Status = models.Completed
 	session := t.currentSession
+	t.currentSession = nil
 	observers := append([]TimerObserver(nil), t.observers...)
 	t.mu.Unlock()
 
-	notify(observers, func(o TimerObserver) { o.OnSessionCompleted(session) })
+	notify(observers, func(o TimerObserver) { o.OnSessionAbandoned(session) })
 	return nil
 }
 
@@ -293,6 +336,7 @@ func (t *ConcreteTimerService) tickOnce() {
 		now := time.Now()
 		t.currentSession.CompletedAt = &now
 		t.currentSession.Status = models.Completed
+		t.currentSession.Elapsed = t.currentSession.Duration
 		if t.currentSession.Type == models.FocusSession {
 			t.focusCompleted++
 		}

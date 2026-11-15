@@ -135,10 +135,9 @@ type CheckAnim struct {
 
 // TaskList represents the task list component using Bubbles list
 type TaskList struct {
-	list     list.Model
-	tasks    []*models.Task
-	selected *models.Task
-	anim     CheckAnim
+	list  list.Model
+	tasks []*models.Task
+	anim  CheckAnim
 }
 
 // NewTaskList creates a new task list component
@@ -168,28 +167,12 @@ func (tl *TaskList) SetCheckAnim(id string, frame int) {
 	tl.anim = CheckAnim{ID: id, Frame: frame}
 }
 
-// Init initializes the task list
-func (tl *TaskList) Init() tea.Cmd {
-	return nil
-}
-
-// Update handles messages for the task list
-func (tl *TaskList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+// Update handles messages for the task list (navigation keys are forwarded
+// here by the root model).
+func (tl *TaskList) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	tl.list, cmd = tl.list.Update(msg)
-	
-	// Check if an item was selected
-	if msg, ok := msg.(tea.KeyMsg); ok {
-		switch msg.Type {
-		case tea.KeyEnter:
-			// Get the selected task
-			if item, ok := tl.list.SelectedItem().(Item); ok {
-				tl.selected = item.Task
-			}
-		}
-	}
-	
-	return tl, cmd
+	return cmd
 }
 
 // View renders the task list
@@ -237,11 +220,6 @@ func (tl *TaskList) syncList() {
 	tl.list.SetItems(items)
 }
 
-// GetTasks returns all tasks in the list
-func (tl *TaskList) GetTasks() []*models.Task {
-	return tl.tasks
-}
-
 // GetSelected returns the currently selected task
 func (tl *TaskList) GetSelected() *models.Task {
 	if item, ok := tl.list.SelectedItem().(Item); ok {
@@ -250,30 +228,7 @@ func (tl *TaskList) GetSelected() *models.Task {
 	return nil
 }
 
-// ClearSelection clears the selection
-func (tl *TaskList) ClearSelection() {
-	tl.selected = nil
-}
-
 // SetSize sets the size of the list
 func (tl *TaskList) SetSize(width, height int) {
 	tl.list.SetSize(width, height)
-}
-
-// Focus focuses the list
-func (tl *TaskList) Focus() tea.Cmd {
-	tl.list.Select(0)
-	return nil
-}
-
-// Blur blurs the list
-func (tl *TaskList) Blur() {
-	// The list model doesn't have a blur method, so we do nothing
-}
-
-// IsFocused returns whether the list is focused
-func (tl *TaskList) IsFocused() bool {
-	// The list model doesn't have a IsFocused method, so we'll track it ourselves
-	// For now, we'll just return a default value
-	return true // This should be managed by the parent component or application state
 }

@@ -78,17 +78,17 @@ func (m Model) handleSettingsKey(key string) (tea.Model, tea.Cmd) {
 			m.settingsCursor++
 		}
 	case "+", "=", "l", "right":
-		m.adjustSetting(1)
+		return m, tea.Batch(m.adjustSetting(1), waitForEvent(m.events))
 	case "-", "_", "h", "left":
-		m.adjustSetting(-1)
+		return m, tea.Batch(m.adjustSetting(-1), waitForEvent(m.events))
 	case " ", "x", "enter":
-		m.toggleSetting()
+		return m, tea.Batch(m.toggleSetting(), waitForEvent(m.events))
 	}
 	return m, waitForEvent(m.events)
 }
 
 // adjustSetting steps the focused numeric setting by dir.
-func (m *Model) adjustSetting(dir int) {
+func (m *Model) adjustSetting(dir int) tea.Cmd {
 	s := m.settings
 	switch m.settingsCursor {
 	case setRowFocus:
@@ -100,13 +100,13 @@ func (m *Model) adjustSetting(dir int) {
 	case setRowInterval:
 		s.LongBreakInterval = clampInt(s.LongBreakInterval+dir, 1, 12)
 	default:
-		return
+		return nil
 	}
-	m.saveSettings()
+	return m.saveSettings()
 }
 
 // toggleSetting flips the focused boolean or cycles the notification mode.
-func (m *Model) toggleSetting() {
+func (m *Model) toggleSetting() tea.Cmd {
 	switch m.settingsCursor {
 	case setRowAutoBreak:
 		m.settings.AutoStartBreaks = !m.settings.AutoStartBreaks
@@ -122,19 +122,20 @@ func (m *Model) toggleSetting() {
 			m.settings.NotificationType = models.SoundNotification
 		}
 	default:
-		return
+		return nil
 	}
-	m.saveSettings()
+	return m.saveSettings()
 }
 
 // saveSettings applies settings to the service/notifier and persists them.
-func (m *Model) saveSettings() {
+func (m *Model) saveSettings() tea.Cmd {
 	m.settings.UpdatedAt = time.Now()
 	m.timer.SetSettings(m.settings)
 	m.notifier.SetNotificationType(m.settings.NotificationType)
 	if m.store != nil {
-		_ = m.store.SaveSettings(m.settings)
+		return m.errToast("save settings", m.store.SaveSettings(m.settings))
 	}
+	return nil
 }
 
 func clampDuration(current, delta, min, max time.Duration) time.Duration {

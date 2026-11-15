@@ -5,12 +5,14 @@ import (
 	"strings"
 	"time"
 
+	clog "github.com/charmbracelet/log"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"pomodoro/src/components"
@@ -56,6 +58,22 @@ const toastDuration = 2200 * time.Millisecond
 // maxMemorySessions caps the in-memory history used by the stats view.
 const maxMemorySessions = 200
 
+// logger receives diagnostics; nil (the default) disables logging. The app
+// never logs to stdout — that would corrupt the alt-screen render.
+var logger *clog.Logger
+
+// SetLogger installs the diagnostics logger (typically a file, see cmd/main).
+func SetLogger(l *clog.Logger) { logger = l }
+
+func logError(context string, err error) {
+	if err == nil {
+		return
+	}
+	if logger != nil {
+		logger.Error(context, "error", err)
+	}
+}
+
 // Model is the root bubbletea model; it routes keys to the active view and
 // bridges timer-service events into the update loop.
 type Model struct {
@@ -74,6 +92,16 @@ type Model struct {
 	height      int
 	clock       time.Time
 	initialized bool
+
+	// pendingToast is shown on the first Init (e.g. corrupt-state notice).
+	pendingToast string
+
+	// Service/UI reconciliation: the ID of the session the UI has adopted
+	// (seen a start event for) and the ID whose completion it has recorded.
+	// The clock tick compares these against the service so a dropped observer
+	// event can never desync the UI (or lose a completion to history).
+	seenSessionID       string
+	handledCompletionID string
 
 	// Tasks view state
 	taskList   *components.TaskList
@@ -100,10 +128,10 @@ type Model struct {
 	checkAnimID string // task row check animation (○→◐→●), empty = off
 
 	// Phase-4 view state
-	sessTable      table.Model      // recent sessions (Stats)
-	helpViewport   viewport.Model   // scrollable cheat sheet (Help)
-	help           help.Model       // short help row (Help footer)
-	settingsCursor int              // focused row (Settings)
+	sessTable      table.Model    // recent sessions (Stats)
+	helpViewport   viewport.Model // scrollable cheat sheet (Help)
+	help           help.Model     // short help row (Help footer)
+	settingsCursor int            // focused row (Settings)
 }
 
 // serviceEvents adapts services.TimerObserver callbacks (invoked on the
@@ -137,6 +165,9 @@ func (s *serviceEvents) OnSessionResumed(session *models.TimerSession) {
 }
 func (s *serviceEvents) OnSessionCompleted(session *models.TimerSession) {
 	s.push(models.SessionCompletedMsg{Session: session})
+}
+func (s *serviceEvents) OnSessionAbandoned(session *models.TimerSession) {
+	s.push(models.SessionAbandonedMsg{Session: session})
 }
 
 // waitForEvent re-arms the channel read; every Update returns it again.
@@ -205,12 +236,22 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 			for _, t := range m.tasks {
 				m.taskList.AddTask(t)
 			}
+		} else {
+			logError("load state", err)
+			m.pendingToast = "Could not load saved state — starting with defaults"
+		}
+		// A corrupt state file was moved aside by the persistence layer; tell
+		// the user where the old data went instead of failing silently.
+		if recovered, ok := store.(interface{ CorruptBackup() string }); ok {
+			if backup := recovered.CorruptBackup(); backup != "" {
+				m.pendingToast = "State file was unreadable — old data kept at " + backup
+			}
 		}
 	}
 	if m.settings == nil || m.settings.ID == "" {
 		m.settings = models.DefaultSettings()
 		if store != nil {
-			_ = store.SaveSettings(m.settings)
+			logError("save default settings", store.SaveSettings(m.settings))
 		}
 	}
 	m.timer.SetSettings(m.settings)
@@ -221,9 +262,17 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 	return m
 }
 
-// Init starts the event bridge and the wall clock.
+// showPendingToastMsg tells the first Update to surface toasts queued during
+// construction (Init cannot mutate the program's model directly).
+type showPendingToastMsg struct{}
+
+// Init starts the event bridge, the wall clock, and the pending-toast relay.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(waitForEvent(m.events), clockTick())
+	return tea.Batch(
+		waitForEvent(m.events),
+		clockTick(),
+		func() tea.Msg { return showPendingToastMsg{} },
+	)
 }
 
 // Update is the central message router.
@@ -253,20 +302,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case showPendingToastMsg:
+		if m.pendingToast != "" {
+			text := m.pendingToast
+			m.pendingToast = ""
+			return m, tea.Batch(m.setToast(text), waitForEvent(m.events))
+		}
+
 	case clockTickMsg:
 		m.clock = time.Time(msg)
-		return m, clockTick()
+		cmds := []tea.Cmd{clockTick(), waitForEvent(m.events)}
+		// Re-drive the progress bar and reconcile with the service so a
+		// dropped observer event self-heals within one second.
+		if cmd := m.updateProgress(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if cmd := m.reconcileService(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case models.SessionStartedMsg:
 		m.flash = ""
 		m.spinActive = false
+		m.seenSessionID = msg.Session.ID
+		m.handledCompletionID = ""
 		return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
 
 	case models.SessionPausedMsg, models.SessionResumedMsg:
 		m.flash = ""
 
 	case models.SessionCompletedMsg:
-		return m.onSessionCompleted(msg.Session)
+		m.seenSessionID = msg.Session.ID
+		if msg.Session.ID == m.handledCompletionID {
+			return m, waitForEvent(m.events) // already recorded via self-heal
+		}
+		m.handledCompletionID = msg.Session.ID
+		return m, tea.Batch(m.applySessionCompletion(msg.Session), waitForEvent(m.events))
+
+	case models.SessionAbandonedMsg:
+		m.seenSessionID = ""
+		m.handledCompletionID = ""
+		m.flash = ""
+		m.spinActive = false
+		return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
 
 	case models.TimerTickMsg:
 		// The service already advanced the session; ease the bar toward the
@@ -304,11 +383,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, waitForEvent(m.events)
 }
 
-// onSessionCompleted records the finished session, links pomodoros to the
+// reconcileService compares the service's session against what the UI has
+// already handled, adopting or completing it when an observer event was
+// dropped (full event buffer). Runs once per clock tick.
+func (m *Model) reconcileService() tea.Cmd {
+	s := m.timer.GetCurrentSession()
+	if s == nil {
+		m.seenSessionID = ""
+		return nil
+	}
+	if s.ID == m.seenSessionID {
+		return nil
+	}
+	switch s.Status {
+	case models.Running, models.Paused:
+		// A start event was dropped: adopt the session now.
+		m.seenSessionID = s.ID
+		m.handledCompletionID = ""
+		m.flash = ""
+		m.spinActive = false
+		fraction := 0.0
+		if s.Duration > 0 {
+			fraction = 1 - float64(s.Remaining)/float64(s.Duration)
+		}
+		return m.progress.SetPercent(fraction)
+	case models.Completed:
+		// A completion event was dropped: record it before it is lost.
+		m.seenSessionID = s.ID
+		if s.ID != m.handledCompletionID {
+			m.handledCompletionID = s.ID
+			return m.applySessionCompletion(s)
+		}
+	}
+	return nil
+}
+
+// applySessionCompletion records the finished session, links pomodoros to the
 // current task, and raises the completion banner.
-func (m Model) onSessionCompleted(session *models.TimerSession) (tea.Model, tea.Cmd) {
+func (m *Model) applySessionCompletion(session *models.TimerSession) tea.Cmd {
+	var cmds []tea.Cmd
 	if m.store != nil {
-		_ = m.store.SaveSession(session)
+		if err := m.store.SaveSession(session); err != nil {
+			cmds = append(cmds, m.errToast("save session", err))
+		}
 	}
 	m.sessions = append([]models.TimerSession{*session}, m.sessions...)
 	if len(m.sessions) > maxMemorySessions {
@@ -320,7 +437,9 @@ func (m Model) onSessionCompleted(session *models.TimerSession) (tea.Model, tea.
 		if task := m.currentTask(); task != nil {
 			task.CompletedPomodoros++
 			if m.store != nil {
-				_ = m.store.SaveTask(task)
+				if err := m.store.SaveTask(task); err != nil {
+					cmds = append(cmds, m.errToast("update task pomodoros", err))
+				}
 			}
 		}
 		m.flash = "🍅 Focus complete — time for a break"
@@ -335,11 +454,11 @@ func (m Model) onSessionCompleted(session *models.TimerSession) (tea.Model, tea.
 	m.spinActive = autoStart
 
 	m.flashSeq++
-	cmds := []tea.Cmd{flashCmd(m.flashSeq), waitForEvent(m.events)}
+	cmds = append(cmds, flashCmd(m.flashSeq))
 	if autoStart {
 		cmds = append(cmds, spinner.Tick)
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 // onFlashExpired hides the banner and applies auto-start settings.
@@ -350,11 +469,10 @@ func (m Model) onFlashExpired(msg flashExpireMsg) (tea.Model, tea.Cmd) {
 			autoStart := (done.Type == models.FocusSession && m.settings.AutoStartBreaks) ||
 				(done.Type != models.FocusSession && m.settings.AutoStartFocus)
 			if autoStart {
-				if err := m.timer.StartSession(m.timer.SuggestNext()); err == nil {
-					// Keep attributing auto-started sessions to the current task.
-					if s := m.timer.GetCurrentSession(); s != nil {
-						s.TaskID = m.currentTaskID
-					}
+				// Auto-started sessions keep the current task's attribution.
+				err := m.timer.StartSessionForTask(m.currentTaskID, m.timer.SuggestNext(), 0)
+				if err != nil {
+					return m, tea.Batch(m.errToast("auto-start next session", err), waitForEvent(m.events))
 				}
 			}
 		}
@@ -396,13 +514,28 @@ func (m *Model) updateProgress() tea.Cmd {
 	return m.progress.SetPercent(fraction)
 }
 
-func (m *Model) toastf(format string, args ...interface{}) {
-	m.toast = fmt.Sprintf(format, args...)
+// setToast shows a transient message and schedules its expiry as a cmd (no
+// goroutines — a rapid sequence simply supersedes earlier toasts).
+func (m *Model) setToast(text string) tea.Cmd {
+	m.toast = text
 	m.toastSeq++
-	go func(seq int) {
-		time.Sleep(toastDuration)
-		m.events <- toastExpireMsg{seq}
-	}(m.toastSeq)
+	seq := m.toastSeq
+	return tea.Tick(toastDuration, func(time.Time) tea.Msg { return toastExpireMsg{seq} })
+}
+
+// toastf formats and shows a toast; the returned cmd drives its expiry.
+func (m *Model) toastf(format string, args ...interface{}) tea.Cmd {
+	return m.setToast(fmt.Sprintf(format, args...))
+}
+
+// errToast reports a failed operation as a toast (and in the debug log).
+// A nil error yields a nil cmd.
+func (m *Model) errToast(what string, err error) tea.Cmd {
+	if err == nil {
+		return nil
+	}
+	logError(what, err)
+	return m.toastf("%s failed: %v", what, err)
 }
 
 // --- session helpers ---
@@ -436,16 +569,10 @@ func (m Model) todayCount() int {
 
 // startFocus starts a focus session, optionally overriding the duration.
 // The session is linked to the current task so stats can attribute it.
-func (m *Model) startFocus(duration time.Duration) {
+func (m *Model) startFocus(duration time.Duration) tea.Cmd {
 	m.flash = ""
-	if duration > 0 {
-		_ = m.timer.StartSessionWithDuration(models.FocusSession, duration)
-	} else {
-		_ = m.timer.StartSession(models.FocusSession)
-	}
-	if s := m.timer.GetCurrentSession(); s != nil {
-		s.TaskID = m.currentTaskID
-	}
+	err := m.timer.StartSessionForTask(m.currentTaskID, models.FocusSession, duration)
+	return m.errToast("start focus", err)
 }
 
 // --- key handling ---
@@ -472,23 +599,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case m.tab == TabHelp:
 			m.tab = TabTimer
 		}
-		return m, nil
+		return m, waitForEvent(m.events)
 
 	case "?":
 		m.tab = TabHelp
-		return m, nil
+		return m, waitForEvent(m.events)
 
 	case "tab":
 		m.tab = (m.tab + 1) % tabCount
-		return m, nil
+		return m, waitForEvent(m.events)
 	case "shift+tab":
 		m.tab = (m.tab + tabCount - 1) % tabCount
-		return m, nil
+		return m, waitForEvent(m.events)
 
 	case "q":
 		if m.sessionRunning() {
 			m.confirmQuit = true
-			return m, nil
+			return m, waitForEvent(m.events)
 		}
 		return m.quitNow()
 	}
@@ -499,9 +626,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.quitNow()
 		case "n", "N":
 			m.confirmQuit = false
-			return m, nil
+			return m, waitForEvent(m.events)
 		}
-		return m, nil
+		return m, waitForEvent(m.events)
 	}
 
 	if m.deleteArm {
@@ -510,7 +637,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.confirmDeleteTask()
 		default:
 			m.deleteArm = false
-			return m, nil
+			return m, waitForEvent(m.events)
 		}
 	}
 
@@ -532,42 +659,50 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 	session := m.timer.GetCurrentSession()
+	active := session != nil && (session.Status == models.Running || session.Status == models.Paused)
 
 	switch key {
 	case " ", "space", "enter":
 		switch {
 		case session == nil || session.Status == models.Completed:
-			m.startFocus(0)
+			return m, tea.Batch(m.startFocus(0), waitForEvent(m.events))
 		case session.Status == models.Running:
-			_ = m.timer.PauseSession()
+			return m, tea.Batch(m.errToast("pause", m.timer.PauseSession()), waitForEvent(m.events))
 		case session.Status == models.Paused:
-			_ = m.timer.ResumeSession()
+			return m, tea.Batch(m.errToast("resume", m.timer.ResumeSession()), waitForEvent(m.events))
 		}
 
 	case "r":
-		// Reset back to the ready state (abandons the session, no credit).
-		if session != nil {
-			_ = m.timer.StopSession()
+		// Reset back to the ready state: abandon without credit.
+		if active {
+			if err := m.timer.StopSession(); err != nil {
+				return m, tea.Batch(m.errToast("reset", err), waitForEvent(m.events))
+			}
+			// The abandon event tidies the rest; reset locally too so the
+			// screen is immediate even if the event is still queued.
 			m.flash = ""
 			m.spinActive = false
+			m.seenSessionID = ""
+			m.handledCompletionID = ""
 			return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
 		}
 
 	case "s":
-		// Skip to the next session in the rhythm.
-		if session != nil {
-			_ = m.timer.StopSession()
-		}
-		if err := m.timer.StartSession(m.timer.SuggestNext()); err == nil {
-			m.flash = ""
+		// Skip: complete the session now (credited, recorded) and let the
+		// completion event drive the transition / auto-start.
+		if active {
+			if err := m.timer.SkipSession(); err != nil {
+				return m, tea.Batch(m.errToast("skip", err), waitForEvent(m.events))
+			}
+			return m, waitForEvent(m.events)
 		}
 
 	case "1":
-		m.startFocus(15 * time.Minute)
+		return m, tea.Batch(m.startFocus(15*time.Minute), waitForEvent(m.events))
 	case "2":
-		m.startFocus(25 * time.Minute)
+		return m, tea.Batch(m.startFocus(25*time.Minute), waitForEvent(m.events))
 	case "3":
-		m.startFocus(35 * time.Minute)
+		return m, tea.Batch(m.startFocus(35*time.Minute), waitForEvent(m.events))
 	}
 
 	return m, waitForEvent(m.events)
@@ -576,7 +711,7 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 // handleTasksKey handles the tasks tab keys; nav keys are forwarded to the
 // bubbles list.
 func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+	var cmds []tea.Cmd
 
 	switch key {
 	case "a":
@@ -585,59 +720,60 @@ func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.addFocus = addFieldTitle
 		m.addTitle.Reset()
 		m.addDesc.Reset()
-		return m, m.addTitle.Focus()
+		return m, tea.Batch(m.addTitle.Focus(), waitForEvent(m.events))
 
 	case "x":
 		if task := m.taskList.GetSelected(); task != nil {
 			wasDone := task.Status == models.DoneStatus
-			m.toggleTaskDone(task)
+			cmds = append(cmds, m.toggleTaskDone(task))
 			if !wasDone {
 				// Animate the check mark: ○ → ◐ → ●
 				m.checkAnimID = task.ID
 				m.taskList.SetCheckAnim(task.ID, 1)
-				return m, tea.Batch(checkAnimCmd(1), waitForEvent(m.events))
+				cmds = append(cmds, checkAnimCmd(1), waitForEvent(m.events))
+				return m, tea.Batch(cmds...)
 			}
 			m.taskList.SetCheckAnim("", 0)
 		}
-		return m, nil
+		return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
 
 	case "d":
 		if task := m.taskList.GetSelected(); task != nil {
 			m.deleteArm = true
 			m.confirmMsg = task.Title
-			m.toastf("Delete %q? y to confirm", task.Title)
-			return m, waitForEvent(m.events)
+			cmds = append(cmds, m.toastf("Delete %q? y to confirm", task.Title))
 		}
-		return m, nil
+		return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
 
 	case "enter":
 		if task := m.taskList.GetSelected(); task != nil {
 			m.currentTaskID = task.ID
+			// Success toast first: a later error toast must show on top.
+			success := m.toastf("Focusing on: %s", task.Title)
 			// Working on it now: mark in progress (unless already done).
+			var errCmd tea.Cmd
 			if task.Status == models.ToDoStatus {
 				task.Status = models.InProgressStatus
 				m.taskList.UpdateTask(task)
 				if m.store != nil {
-					_ = m.store.SaveTask(task)
+					errCmd = m.errToast("update task", m.store.SaveTask(task))
 				}
 			}
-			m.toastf("Focusing on: %s", task.Title)
+			cmds = append(cmds, success, errCmd)
 		}
-		return m, nil
+		return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
 	}
 
 	// Navigation goes to the bubbles list.
 	switch key {
 	case "up", "down", "j", "k", "home", "end", "pgup", "pgdown", "g", "G":
-		updated, c := m.taskList.Update(msg)
-		m.taskList = updated.(*components.TaskList)
-		cmd = c
+		cmds = append(cmds, m.taskList.Update(msg))
 	}
 
-	return m, tea.Batch(cmd, waitForEvent(m.events))
+	return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
 }
 
-func (m *Model) toggleTaskDone(task *models.Task) {
+func (m *Model) toggleTaskDone(task *models.Task) tea.Cmd {
 	if task.Status == models.DoneStatus {
 		task.Status = models.ToDoStatus
 		task.CompletedAt = nil
@@ -648,11 +784,13 @@ func (m *Model) toggleTaskDone(task *models.Task) {
 	}
 	m.taskList.UpdateTask(task)
 	if m.store != nil {
-		_ = m.store.SaveTask(task)
+		return m.errToast("save task", m.store.SaveTask(task))
 	}
+	return nil
 }
 
 func (m *Model) confirmDeleteTask() (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 	if task := m.taskList.GetSelected(); task != nil {
 		id := task.ID
 		m.taskList.RemoveTask(id)
@@ -662,16 +800,19 @@ func (m *Model) confirmDeleteTask() (tea.Model, tea.Cmd) {
 				break
 			}
 		}
+		// Success toast first: a later error toast must show on top.
+		success := m.toastf("Deleted task")
+		var errCmd tea.Cmd
 		if m.store != nil {
-			_ = m.store.DeleteTask(id)
+			errCmd = m.errToast("delete task", m.store.DeleteTask(id))
 		}
 		if m.currentTaskID == id {
 			m.currentTaskID = ""
 		}
-		m.toastf("Deleted task")
+		cmds = append(cmds, success, errCmd)
 	}
 	m.deleteArm = false
-	return m, waitForEvent(m.events)
+	return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
 }
 
 // handleAddFormKey routes keys while the new-task form is open.
@@ -683,25 +824,25 @@ func (m Model) handleAddFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.adding = false
 		m.addTitle.Blur()
 		m.addDesc.Blur()
-		return m, nil
+		return m, waitForEvent(m.events)
 
 	case "enter":
 		title := strings.TrimSpace(m.addTitle.Value())
 		if title == "" {
-			m.toastf("Give the task a title first")
-			return m, waitForEvent(m.events)
+			return m, tea.Batch(m.toastf("Give the task a title first"), waitForEvent(m.events))
 		}
 		task := models.NewTask(title, m.addDesc.Value(), m.addEst)
 		m.tasks = append(m.tasks, task)
 		m.taskList.AddTask(task)
+		// Success toast first: a later error toast must show on top.
+		success := m.toastf("Added: %s", task.Title)
 		if m.store != nil {
-			_ = m.store.SaveTask(task)
+			cmd = m.errToast("save task", m.store.SaveTask(task))
 		}
 		m.adding = false
 		m.addTitle.Blur()
 		m.addDesc.Blur()
-		m.toastf("Added: %s", task.Title)
-		return m, waitForEvent(m.events)
+		return m, tea.Batch(success, cmd, waitForEvent(m.events))
 
 	case "tab":
 		if m.addFocus == addFieldTitle {
@@ -773,7 +914,7 @@ func (m Model) sessionRunning() bool {
 func (m Model) quitNow() (tea.Model, tea.Cmd) {
 	m.timer.Shutdown()
 	if m.store != nil {
-		_ = m.store.Close()
+		logError("flush state on quit", m.store.Close())
 	}
 	m.quitting = true
 	return m, tea.Quit
