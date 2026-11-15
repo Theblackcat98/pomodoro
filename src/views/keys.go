@@ -22,6 +22,7 @@ type keyMap struct {
 	Adjust     key.Binding
 	ToggleSet  key.Binding
 	Scroll     key.Binding
+	Export     key.Binding
 	Cancel     key.Binding
 }
 
@@ -43,6 +44,7 @@ var keys = keyMap{
 	Adjust:     key.NewBinding(key.WithKeys("+", "-", "="), key.WithHelp("+/-", "adjust")),
 	ToggleSet:  key.NewBinding(key.WithKeys(" ", "x", "enter"), key.WithHelp("space", "toggle")),
 	Scroll:     key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "scroll")),
+	Export:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export JSON (Stats)")),
 	Cancel:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 }
 

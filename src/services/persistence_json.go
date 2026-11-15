@@ -67,6 +67,13 @@ func NewJSONPersistence(path string) (*JSONPersistence, error) {
 	if err := json.Unmarshal(raw, &p.data); err != nil {
 		// A corrupt state file must not make the app unusable: move it aside
 		// (so nothing is silently destroyed) and start from defaults.
+		// Unmarshal may have partially decoded into p.data before failing —
+		// reset it, or half-parsed garbage would become the new state.
+		p.data = AppData{
+			Settings: *models.DefaultSettings(),
+			Tasks:    []*models.Task{},
+			Sessions: []models.TimerSession{},
+		}
 		backup := fmt.Sprintf("%s.corrupt-%s", path, time.Now().Format("20060102-150405"))
 		renameErr := os.Rename(path, backup)
 		if renameErr != nil {

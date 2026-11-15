@@ -137,6 +137,35 @@ func TestPersistenceCorruptFileRecoversWithBackup(t *testing.T) {
 	}
 }
 
+func TestPersistenceCorruptFileDoesNotLeakPartialDecode(t *testing.T) {
+	path := tempPath(t)
+
+	// Valid task, then a session whose duration is a JSON float — the decoder
+	// fails partway through, after the task and one session were decoded.
+	if err := os.WriteFile(path, []byte(`{
+  "settings": {"id": "default"},
+  "tasks": [{"id": "t1", "title": "leaky", "created_at": "2026-01-01T00:00:00Z"}],
+  "sessions": [
+    {"id": "s1", "type": "focus", "duration": 1500000000000},
+    {"id": "s2", "type": "focus", "duration": 1.5e12}
+  ]}`), 0o600); err != nil {
+		t.Fatalf("write corrupt file: %v", err)
+	}
+
+	p, err := NewJSONPersistence(path)
+	if err != nil {
+		t.Fatalf("reopen corrupt: %v", err)
+	}
+	tasks, _ := p.GetTasks(TaskFilter{})
+	if len(tasks) != 0 {
+		t.Fatalf("tasks after recovery = %d, want 0 (partial decode must be discarded)", len(tasks))
+	}
+	sessions, _ := p.GetSessions(SessionFilter{})
+	if len(sessions) != 0 {
+		t.Fatalf("sessions after recovery = %d, want 0 (partial decode must be discarded)", len(sessions))
+	}
+}
+
 func TestPersistenceDeleteAndFilter(t *testing.T) {
 	path := tempPath(t)
 	p, err := NewJSONPersistence(path)

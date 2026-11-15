@@ -1,7 +1,10 @@
 package views
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -1055,7 +1058,7 @@ func (m Model) handleAddFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, waitForEvent(m.events))
 }
 
-// handleStatsKey scrolls the recent-sessions table.
+// handleStatsKey scrolls the recent-sessions table and exports history.
 func (m Model) handleStatsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch key {
@@ -1063,8 +1066,38 @@ func (m Model) handleStatsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		var updated table.Model
 		updated, cmd = m.sessTable.Update(msg)
 		m.sessTable = updated
+	case "e":
+		cmd = m.exportData()
 	}
 	return m, tea.Batch(cmd, waitForEvent(m.events))
+}
+
+// exportData dumps the full store (tasks, settings, sessions) as JSON into
+// the data dir so history is never locked inside the app.
+func (m *Model) exportData() tea.Cmd {
+	if m.store == nil {
+		return nil
+	}
+	data, err := m.store.GetAllData()
+	if err != nil {
+		return m.errToast("load data for export", err)
+	}
+	raw, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return m.errToast("encode export", err)
+	}
+	dir, err := utils.DataDir()
+	if err != nil {
+		return m.errToast("resolve data dir", err)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("export-%s.json", time.Now().Format("20060102-150405")))
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return m.errToast("write export", err)
+	}
+	if logger != nil {
+		logger.Info("export written", "path", path)
+	}
+	return m.toastf("Exported to %s", path)
 }
 
 // handleHelpKey scrolls the cheat sheet.

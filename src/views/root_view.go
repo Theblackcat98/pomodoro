@@ -234,7 +234,7 @@ func (m Model) contextualHints() string {
 	case TabTasks:
 		return hintJoin(hint("a", "add"), hint("x", "toggle"), hint("d", "delete"), hint("enter", "focus"), hint("j/k", "move"), hint("?", "help"))
 	case TabStats:
-		return hintJoin(hint("j/k", "select"), hint("?", "help"))
+		return hintJoin(hint("j/k", "select"), hint("e", "export JSON"), hint("?", "help"))
 	case TabSettings:
 		return hintJoin(hint("j/k", "select"), hint("+/-", "adjust"), hint("space", "toggle"), hint("?", "help"))
 	default:

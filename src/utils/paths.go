@@ -24,3 +24,21 @@ func StateDir() (string, error) {
 	}
 	return dir, nil
 }
+
+// DataDir returns (and creates) the pomodoro data directory for exports:
+// $XDG_DATA_HOME/pomodoro, falling back to ~/.local/share/pomodoro.
+func DataDir() (string, error) {
+	base := os.Getenv("XDG_DATA_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home dir: %w", err)
+		}
+		base = filepath.Join(home, ".local", "share")
+	}
+	dir := filepath.Join(base, "pomodoro")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create data dir: %w", err)
+	}
+	return dir, nil
+}

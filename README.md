@@ -29,8 +29,9 @@ sessions to it. `a` opens a slim add-bar with title, description, and estimate.
 
 ![Stats](docs/screenshots/stats.png)
 
-Today's pomodoros and focus time, the last 7 days, and recent sessions with
-task attribution.
+Today's pomodoros, true focused time (pause-aware), and current/best streaks,
+a 13-week activity heatmap, focus-per-task breakdown, and recent sessions with
+task attribution. Press `e` to export the full history as JSON.
 
 ### Settings
 
@@ -82,6 +83,7 @@ State (tasks, settings, session history) is stored as JSON in
 | `enter`          | Focus the selected task                   |
 | `j` / `k`        | Move through lists and panels             |
 | `+` / `-`        | Adjust the selected setting (Settings)    |
+| `e`              | Export history as JSON (Stats)            |
 | `?`              | Help                                      |
 | `q`              | Quit (asks for confirmation while running)|
 | `esc`            | Cancel / go back                          |
