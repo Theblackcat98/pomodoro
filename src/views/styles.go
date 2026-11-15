@@ -1,28 +1,77 @@
 package views
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"image/color"
+
+	"os"
+
+	"charm.land/lipgloss/v2"
 	"pomodoro/src/models"
 )
+
+// hasDarkBG is resolved once so styles can pick light/dark variants without
+// v1's AdaptiveColor (removed in lipgloss v2). Detection is best-effort:
+// without a terminal we assume dark, which matches the app's look.
+var hasDarkBG = detectDarkBG()
+
+func detectDarkBG() (dark bool) {
+	defer func() {
+		if recover() != nil {
+			dark = true
+		}
+	}()
+	return lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
+}
+
+// adaptive picks the right hex for the terminal's background.
+func adaptive(light, dark string) color.Color {
+	return lipgloss.LightDark(hasDarkBG)(lipgloss.Color(light), lipgloss.Color(dark))
+}
+
+// Palette hex constants — the source of truth for the accents, kept as hex
+// strings because the completion pulse blends them with go-colorful.
+const (
+	hexFocus      = "#E5484D" // tomato red
+	hexShortBreak = "#30A46C" // gentle green
+	hexLongBreak  = "#0091FF" // calm blue
+	hexPaused     = "#FFB224" // amber
+)
+
+// sessionAccentHex is the hex-string twin of sessionAccent, for blending.
+func sessionAccentHex(sessionType models.SessionType, status models.SessionStatus) string {
+	if status == models.Paused {
+		return hexPaused
+	}
+	switch sessionType {
+	case models.FocusSession:
+		return hexFocus
+	case models.ShortBreak:
+		return hexShortBreak
+	case models.LongBreak:
+		return hexLongBreak
+	default:
+		return hexFocus
+	}
+}
 
 // Palette tokens. The look is intentionally "monastic" (docs/layout.md): a
 // tomato accent for focus, gentle green for short breaks, blue for long
 // breaks, amber for paused, and muted text everywhere else.
 var (
 	// Session accents
-	colorFocus      = lipgloss.Color("#E5484D") // tomato red
-	colorShortBreak = lipgloss.Color("#30A46C") // gentle green
-	colorLongBreak  = lipgloss.Color("#0091FF") // calm blue
-	colorPaused     = lipgloss.Color("#FFB224") // amber
+	colorFocus      = lipgloss.Color(hexFocus)
+	colorShortBreak = lipgloss.Color(hexShortBreak)
+	colorLongBreak  = lipgloss.Color(hexLongBreak)
+	colorPaused     = lipgloss.Color(hexPaused)
 	colorDone       = lipgloss.Color("#46A758")
 
 	// Text
-	colorText  = lipgloss.AdaptiveColor{Light: "#3F3F3F", Dark: "#EEEEEE"}
-	colorDim   = lipgloss.AdaptiveColor{Light: "#8F8F8F", Dark: "#6E6E6E"}
-	colorFaint = lipgloss.AdaptiveColor{Light: "#B4B4B4", Dark: "#454545"}
+	colorText  = adaptive("#3F3F3F", "#EEEEEE")
+	colorDim   = adaptive("#8F8F8F", "#6E6E6E")
+	colorFaint = adaptive("#B4B4B4", "#454545")
 
 	// Brand accent (tabs, selection)
-	colorAccent = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+	colorAccent = adaptive("#874BFD", "#7D56F4")
 
 	colorOnAccent = lipgloss.Color("#FFF7DB")
 	colorNeutral  = lipgloss.Color("#8B8B8B")
@@ -30,7 +79,7 @@ var (
 
 // sessionAccent returns the accent color for a session type/status. Paused
 // always shows amber; a finished/unknown session shows the dim text color.
-func sessionAccent(sessionType models.SessionType, status models.SessionStatus) lipgloss.Color {
+func sessionAccent(sessionType models.SessionType, status models.SessionStatus) color.Color {
 	if status == models.Paused {
 		return colorPaused
 	}
@@ -80,7 +129,7 @@ var (
 			Padding(0, 1)
 
 	statusHintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#5A5A5A", Dark: "#8B8B8B"})
+			Foreground(adaptive("#5A5A5A", "#8B8B8B"))
 
 	// Buttons
 	primaryButtonStyle = lipgloss.NewStyle().

@@ -1,17 +1,19 @@
 package views
 
 import (
+	"image/color"
+
 	"math"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"pomodoro/src/models"
 	"pomodoro/src/utils"
 )
 
 // styledDigits renders "MM:SS" letter-spaced; digits that changed in the last
 // tick flash in the session accent and settle back as the flash decays.
-func (m Model) styledDigits(digits string, accent lipgloss.Color) string {
+func (m Model) styledDigits(digits string, accent color.Color) string {
 	runes := []rune(digits)
 	parts := make([]string, 0, len(runes)*2)
 	for i, r := range runes {
@@ -39,7 +41,7 @@ func (m Model) renderTimerView() string {
 		wordmark    string
 		centerSub   string
 		digits      string
-		accent      lipgloss.Color
+		accent      color.Color
 	)
 
 	if active {
@@ -74,7 +76,7 @@ func (m Model) renderTimerView() string {
 	if active && session.Status == models.Paused {
 		breathe := 0.5 + 0.5*float64(math.Sin(2*math.Pi*m.anim.breathe))
 		trackStyle = lipgloss.NewStyle().Foreground(
-			blendAdaptive(colorFaint, colorDim, breathe),
+			blendAdaptiveHex("#B4B4B4", "#454545", "#8F8F8F", "#6E6E6E", breathe),
 		)
 	}
 
@@ -124,7 +126,7 @@ func (m Model) renderTimerView() string {
 // renderTimerControls draws the primary button plus reset/skip, or the
 // duration capsules when idle.
 func (m Model) renderTimerControls(session *models.TimerSession) string {
-	primary := func(label string, color lipgloss.Color) string {
+	primary := func(label string, color color.Color) string {
 		return primaryButtonStyle.Background(color).Render(label)
 	}
 	secondary := func(label string) string {

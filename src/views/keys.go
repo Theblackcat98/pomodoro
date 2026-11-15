@@ -1,6 +1,6 @@
 package views
 
-import "github.com/charmbracelet/bubbles/key"
+import "charm.land/bubbles/v2/key"
 
 // keyMap is the single source of truth for the app's keybindings. The help
 // view renders it; the status-bar hints mirror it per context.
@@ -36,7 +36,7 @@ var keys = keyMap{
 	Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:       key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 	ForceQuit:  key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "force quit")),
-	StartPause: key.NewBinding(key.WithKeys(" ", "enter"), key.WithHelp("space", "start/pause")),
+	StartPause: key.NewBinding(key.WithKeys("space", "enter"), key.WithHelp("space", "start/pause")),
 	Reset:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reset")),
 	Resume:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "resume recovered session")),
 	Skip:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip")),
@@ -50,7 +50,7 @@ var keys = keyMap{
 	FocusTask:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "focus task")),
 	Nav:        key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "move")),
 	Adjust:     key.NewBinding(key.WithKeys("+", "-", "="), key.WithHelp("+/-", "adjust")),
-	ToggleSet:  key.NewBinding(key.WithKeys(" ", "x", "enter"), key.WithHelp("space", "toggle")),
+	ToggleSet:  key.NewBinding(key.WithKeys("space", "x", "enter"), key.WithHelp("space", "toggle")),
 	Scroll:     key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "scroll")),
 	Export:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export JSON (Stats)")),
 	Cancel:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),

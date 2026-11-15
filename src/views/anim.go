@@ -1,12 +1,14 @@
 package views
 
 import (
+	"image/color"
+
 	"math"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/harmonica"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
 )
 
@@ -19,9 +21,9 @@ import (
 // the spinner tick storm. Renderers read animSet values; they never step
 // them, so rendering stays a pure function of state.
 
-// animFPS is the shared loop's frame rate. 30fps keeps the v1 renderer
-// comfortable; revisit 60fps after the v2 (Cursed renderer) migration.
-const animFPS = 30
+// animFPS is the shared loop's frame rate. The v2 Cursed renderer makes 60fps
+// affordable (per the improvement plan's post-migration bump).
+const animFPS = 60
 
 const animFrame = time.Second / animFPS
 
@@ -84,7 +86,7 @@ type animSet struct {
 	// Completion pulse: one-shot 1→0 decay. While >0 the ring accent lerps
 	// from pulseFrom to pulseTo, flashing the state transition.
 	pulse              float64
-	pulseFrom, pulseTo lipgloss.Color
+	pulseFrom, pulseTo string
 
 	// Breathe: [0,1] phase of the paused ring track. Only advances while a
 	// session is paused.
@@ -160,7 +162,7 @@ func (a *animSet) flashDigits(digits, prev string) {
 }
 
 // startPulse arms the completion flash, morphing from one accent to the next.
-func (a *animSet) startPulse(from, to lipgloss.Color) {
+func (a *animSet) startPulse(from, to string) {
 	a.pulse, a.pulseFrom, a.pulseTo = 1, from, to
 }
 
@@ -186,30 +188,30 @@ func clamp01(v float64) float64 {
 
 // blendColors lerps two hex colors; t=0 → a, t=1 → b. Used for the completion
 // morph and the paused breathing (no terminal alpha, so we blend the palette).
-func blendColors(a, b lipgloss.Color, t float64) lipgloss.Color {
+func blendColors(aHex, bHex string, t float64) color.Color {
 	if t <= 0 {
-		return a
+		return lipgloss.Color(aHex)
 	}
 	if t >= 1 {
-		return b
+		return lipgloss.Color(bHex)
 	}
-	ca, errA := colorful.Hex(string(a))
-	cb, errB := colorful.Hex(string(b))
+	ca, errA := colorful.Hex(aHex)
+	cb, errB := colorful.Hex(bHex)
 	if errA != nil || errB != nil {
-		return a
+		return lipgloss.Color(aHex)
 	}
 	return lipgloss.Color(ca.BlendLuv(cb, t).Clamped().Hex())
 }
 
-// blendAdaptive resolves an AdaptiveColor for the current terminal and blends.
-func blendAdaptive(a, b lipgloss.AdaptiveColor, t float64) lipgloss.Color {
-	return blendColors(resolveAdaptive(a), resolveAdaptive(b), t)
+// blendAdaptiveHex blends two light/dark hex pairs using the resolved
+// terminal background (v2 replacement for the AdaptiveColor-based helper).
+func blendAdaptiveHex(lightA, darkA, lightB, darkB string, t float64) color.Color {
+	a, b := lightA, lightB
+	if hasDarkBG {
+		a, b = darkA, darkB
+	}
+	return blendColors(a, b, t)
 }
 
-// resolveAdaptive picks the light/dark variant for this terminal.
-func resolveAdaptive(c lipgloss.AdaptiveColor) lipgloss.Color {
-	if lipgloss.HasDarkBackground() {
-		return lipgloss.Color(c.Dark)
-	}
-	return lipgloss.Color(c.Light)
-}
+// HasDarkBG exposes the resolved background detection for other packages.
+func HasDarkBG() bool { return hasDarkBG }

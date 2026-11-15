@@ -3,7 +3,7 @@ package views
 import (
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func TestFlashDigitsMarksChangedPositions(t *testing.T) {
@@ -73,18 +73,18 @@ func TestDecayValueClampsAtZero(t *testing.T) {
 }
 
 func TestBlendColorsEndpoints(t *testing.T) {
-	a := lipgloss.Color("#E5484D")
-	b := lipgloss.Color("#30A46C")
+	a := hexFocus
+	b := hexShortBreak
 
-	if got := blendColors(a, b, 0); got != a {
+	if got := blendColors(a, b, 0); got != lipgloss.Color(a) {
 		t.Fatalf("blend t=0 = %v, want a", got)
 	}
-	if got := blendColors(a, b, 1); got != b {
+	if got := blendColors(a, b, 1); got != lipgloss.Color(b) {
 		t.Fatalf("blend t=1 = %v, want b", got)
 	}
 	// Midpoint is a valid hex color distinct from both endpoints.
 	mid := blendColors(a, b, 0.5)
-	if mid == a || mid == b {
+	if mid == lipgloss.Color(a) || mid == lipgloss.Color(b) {
 		t.Fatalf("blend t=0.5 = %v, want a distinct color", mid)
 	}
 }
@@ -104,7 +104,7 @@ func TestAnimActiveLifecycle(t *testing.T) {
 	}
 
 	// A pulse keeps it alive until decayed.
-	a.startPulse(colorFocus, colorShortBreak)
+	a.startPulse(hexFocus, hexShortBreak)
 	if !a.active(false) {
 		t.Fatal("pulse must keep the loop alive")
 	}

@@ -2,20 +2,22 @@ package views
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 	"pomodoro/src/models"
 )
 
 // View composes the whole UI: header (brand + tabs + today count), the active
 // view's content centered in the remaining space, and the status bar.
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	if m.quitting {
-		return ""
+		return tea.NewView("")
 	}
 
 	header := m.renderHeader()
@@ -80,11 +82,19 @@ func (m Model) View() string {
 	}
 
 	doc := lipgloss.JoinVertical(lipgloss.Left, header, body, status)
-	return appStyle.Render(doc)
+
+	// v2 declares terminal features in the view: alt-screen always, mouse
+	// only when the user enabled it in settings (wheel + tab clicks).
+	v := tea.NewView(appStyle.Render(doc))
+	v.AltScreen = true
+	if m.settings != nil && m.settings.Mouse {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 // currentAccent is the accent color for the session currently on screen.
-func (m Model) currentAccent() lipgloss.Color {
+func (m Model) currentAccent() color.Color {
 	session := m.timer.GetCurrentSession()
 	sessionType := models.FocusSession
 	status := models.SessionStatus("")
@@ -180,7 +190,7 @@ func (m Model) renderStatusBar() string {
 }
 
 // statusChip returns the label + color for the left status chip.
-func (m Model) statusChip() (string, lipgloss.Color) {
+func (m Model) statusChip() (string, color.Color) {
 	session := m.timer.GetCurrentSession()
 	switch {
 	case session == nil || session.Status == models.Completed:
@@ -262,7 +272,7 @@ func computeTabHits() []tabHit {
 // renderConfirmModal draws the shared centered confirmation panel used for
 // quit-while-running and task deletion. The safe answer is always offered
 // first and Esc backs out.
-func (m Model) renderConfirmModal(title, message string, accent lipgloss.Color) string {
+func (m Model) renderConfirmModal(title, message string, accent color.Color) string {
 	panel := panelStyle.
 		BorderForeground(accent).
 		Width(46).

@@ -8,16 +8,16 @@ import (
 	"strings"
 	"time"
 
-	clog "github.com/charmbracelet/log"
+	clog "charm.land/log/v2"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"pomodoro/src/components"
 	"pomodoro/src/models"
 	"pomodoro/src/services"
@@ -232,7 +232,7 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 		clock:    time.Now(),
 		anim:     newAnimSet(),
 		tabHits:  computeTabHits(),
-		progress: progress.New(progress.WithDefaultGradient(), progress.WithWidth(40)),
+		progress: progress.New(progress.WithDefaultBlend(), progress.WithWidth(40)),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		sessTable: table.New(
 			table.WithColumns([]table.Column{
@@ -245,7 +245,7 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 			table.WithHeight(8),
 		),
 		help:         help.New(),
-		helpViewport: viewport.New(0, 10),
+		helpViewport: viewport.New(viewport.WithHeight(10)),
 	}
 
 	titleInput := textinput.New()
@@ -456,22 +456,17 @@ type showPendingToastMsg struct{}
 
 // Init starts the event bridge, the wall clock, and the pending-toast relay.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{
+	return tea.Batch(
 		waitForEvent(m.events),
 		clockTick(),
 		func() tea.Msg { return showPendingToastMsg{} },
-	}
-	// Restore the mouse mode chosen in settings (wheel + tab clicks).
-	if m.settings != nil && m.settings.Mouse {
-		cmds = append(cmds, tea.EnableMouseCellMotion)
-	}
-	return tea.Batch(cmds...)
+	)
 }
 
 // Update is the central message router.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 
 	case tea.WindowSizeMsg:
@@ -486,12 +481,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessTable.SetWidth(max(20, m.width-8))
 		}
 		m.sessTable.SetHeight(max(4, min(9, m.height-14)))
-		m.helpViewport.Width = max(20, m.width-8)
-		m.helpViewport.Height = max(6, m.height-8)
+		m.helpViewport.SetWidth(max(20, m.width-8))
+		m.helpViewport.SetHeight(max(6, m.height-8))
 		if m.width < 80 || m.height < 20 {
-			m.progress.Width = 24
+			m.progress.SetWidth(24)
 		} else {
-			m.progress.Width = 40
+			m.progress.SetWidth(40)
 		}
 		return m, nil
 
@@ -529,8 +524,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.animRunning = false
 		return m, waitForEvent(m.events)
 
-	case tea.MouseMsg:
-		if cmd := m.handleMouse(msg); cmd != nil {
+	case tea.MouseWheelMsg:
+		if cmd := m.handleMouseWheel(msg); cmd != nil {
+			return m, tea.Batch(cmd, waitForEvent(m.events))
+		}
+
+	case tea.MouseClickMsg:
+		if cmd := m.handleMouseClick(msg); cmd != nil {
 			return m, tea.Batch(cmd, waitForEvent(m.events))
 		}
 
@@ -582,8 +582,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.syncTimerAnim(), waitForEvent(m.events))
 
 	case progress.FrameMsg:
-		pm, cmd := m.progress.Update(msg)
-		m.progress = pm.(progress.Model)
+		var cmd tea.Cmd
+		m.progress, cmd = m.progress.Update(msg)
 		return m, tea.Batch(cmd, waitForEvent(m.events))
 
 	case spinner.TickMsg:
@@ -691,7 +691,7 @@ func (m *Model) applySessionCompletion(session *models.TimerSession) tea.Cmd {
 	// Completion motion: the ring sweeps full while its accent morphs from
 	// the finished session's color to the next one's.
 	m.anim.ring.setTarget(1)
-	m.anim.startPulse(sessionAccent(session.Type, models.Running), sessionAccent(m.timer.SuggestNext(), ""))
+	m.anim.startPulse(sessionAccentHex(session.Type, models.Running), sessionAccentHex(m.timer.SuggestNext(), ""))
 	m.lastDigits = ""
 
 	// Show the transition spinner only when a session will auto-start.
@@ -702,7 +702,8 @@ func (m *Model) applySessionCompletion(session *models.TimerSession) tea.Cmd {
 	m.flashSeq++
 	cmds = append(cmds, flashCmd(m.flashSeq), m.kickAnim())
 	if autoStart {
-		cmds = append(cmds, spinner.Tick)
+		sp := m.spinner
+		cmds = append(cmds, func() tea.Msg { return sp.Tick() })
 	}
 	return tea.Batch(cmds...)
 }
@@ -803,37 +804,44 @@ func (m *Model) syncTimerAnim() tea.Cmd {
 	return m.kickAnim()
 }
 
-// handleMouse routes wheel scrolls to the active view's scroller and left
-// clicks to the header tabs. Mouse support only reaches Update when enabled
-// in settings (every action has a keyboard equivalent).
-func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
-	if msg.Action != tea.MouseActionPress {
+// handleMouseWheel routes wheel scrolls to the active view's scroller. Mouse
+// events only reach Update when the settings enable mouse mode (View field);
+// every action has a keyboard equivalent.
+func (m *Model) handleMouseWheel(msg tea.MouseWheelMsg) tea.Cmd {
+	button := msg.Mouse().Button
+	if button != tea.MouseWheelUp && button != tea.MouseWheelDown {
 		return nil
 	}
-	switch msg.Button {
-	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
-		key := "up"
-		if msg.Button == tea.MouseButtonWheelDown {
-			key = "down"
-		}
-		keyMsg := tea.KeyMsg{Type: keyToType(key), Runes: []rune{rune(key[0])}}
+	keyMsg := tea.KeyPressMsg{Code: tea.KeyUp}
+	if button == tea.MouseWheelDown {
+		keyMsg = tea.KeyPressMsg{Code: tea.KeyDown}
+	}
+	switch m.tab {
+	case TabTasks:
+		return m.taskList.Update(keyMsg)
+	case TabStats:
 		var cmd tea.Cmd
-		switch m.tab {
-		case TabTasks:
-			cmd = m.taskList.Update(keyMsg)
-		case TabStats:
-			m.sessTable, cmd = m.sessTable.Update(keyMsg)
-		case TabHelp:
-			m.helpViewport, cmd = m.helpViewport.Update(keyMsg)
-		}
+		m.sessTable, cmd = m.sessTable.Update(keyMsg)
 		return cmd
-	case tea.MouseButtonLeft:
-		for _, hit := range m.tabHits {
-			if msg.X >= hit.startX && msg.X <= hit.endX && msg.Y == 0 {
-				m.anim.tabSlide = tabSlideDir(m.tab, hit.tab)
-				m.tab = hit.tab
-				return m.kickAnim()
-			}
+	case TabHelp:
+		var cmd tea.Cmd
+		m.helpViewport, cmd = m.helpViewport.Update(keyMsg)
+		return cmd
+	}
+	return nil
+}
+
+// handleMouseClick routes left clicks on the header tabs.
+func (m *Model) handleMouseClick(msg tea.MouseClickMsg) tea.Cmd {
+	ev := msg.Mouse()
+	if ev.Button != tea.MouseLeft {
+		return nil
+	}
+	for _, hit := range m.tabHits {
+		if ev.X >= hit.startX && ev.X <= hit.endX && ev.Y == 0 {
+			m.anim.tabSlide = tabSlideDir(m.tab, hit.tab)
+			m.tab = hit.tab
+			return m.kickAnim()
 		}
 	}
 	return nil
@@ -848,18 +856,6 @@ func tabSlideDir(from, to Tab) float64 {
 		return -1
 	}
 	return 0
-}
-
-// keyToType maps simple key names to tea.KeyType for synthetic messages.
-func keyToType(key string) tea.KeyType {
-	switch key {
-	case "up":
-		return tea.KeyUp
-	case "down":
-		return tea.KeyDown
-	default:
-		return tea.KeyRunes
-	}
 }
 
 // setToast shows a transient message and schedules its expiry as a cmd (no
@@ -929,7 +925,7 @@ func (m *Model) startFocus(duration time.Duration) tea.Cmd {
 
 // --- key handling ---
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	if key == "ctrl+c" {
@@ -1021,7 +1017,7 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 	active := session != nil && (session.Status == models.Running || session.Status == models.Paused)
 
 	switch key {
-	case " ", "space", "enter":
+	case "space", "enter":
 		switch {
 		case session == nil || session.Status == models.Completed:
 			return m, tea.Batch(m.startFocus(0), waitForEvent(m.events))
@@ -1081,7 +1077,7 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 
 // handleTasksKey handles the tasks tab keys; nav keys are forwarded to the
 // bubbles list.
-func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) handleTasksKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	// While the list's filter is active, all keys belong to the list (esc
@@ -1219,7 +1215,7 @@ func (m *Model) confirmDeleteTask() (tea.Model, tea.Cmd) {
 
 // handleAddFormKey routes keys while the new-task form is open. The same
 // form edits an existing task when editingID is set.
-func (m Model) handleAddFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAddFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg.String() {
@@ -1306,7 +1302,7 @@ func (m Model) handleAddFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleStatsKey scrolls the recent-sessions table and exports history.
-func (m Model) handleStatsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) handleStatsKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch key {
 	case "up", "down", "j", "k", "pgup", "pgdown", "home", "end":
@@ -1348,7 +1344,7 @@ func (m *Model) exportData() tea.Cmd {
 }
 
 // handleHelpKey scrolls the cheat sheet.
-func (m Model) handleHelpKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) handleHelpKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch key {
 	case "up", "down", "j", "k", "pgup", "pgdown":

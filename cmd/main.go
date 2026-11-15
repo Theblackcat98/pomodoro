@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	tea "github.com/charmbracelet/bubbletea"
-	clog "github.com/charmbracelet/log"
+	tea "charm.land/bubbletea/v2"
+	clog "charm.land/log/v2"
 	"pomodoro/src/components"
 	"pomodoro/src/services"
 	"pomodoro/src/utils"
@@ -27,7 +27,7 @@ func main() {
 	// the service; a nil setting here just means "defaults until loaded".
 	timerSvc := services.NewTimerService(nil)
 
-	p := tea.NewProgram(views.NewModel(timerSvc, store), tea.WithAltScreen())
+	p := tea.NewProgram(views.NewModel(timerSvc, store)) // alt-screen declared in View()
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}

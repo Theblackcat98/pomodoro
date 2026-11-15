@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	clog "github.com/charmbracelet/log"
+	clog "charm.land/log/v2"
 	"github.com/gen2brain/beeep"
 	"pomodoro/src/models"
 )

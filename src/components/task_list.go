@@ -1,13 +1,16 @@
 package components
 
 import (
+	"image/color"
+
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"pomodoro/src/models"
 	"pomodoro/src/utils"
 )
@@ -15,10 +18,26 @@ import (
 // Delegate color tokens (kept local: the views package imports components, so
 // it cannot be imported back).
 var (
-	delegateColorDone   = lipgloss.Color("#46A758")
-	delegateColorFocus  = lipgloss.Color("#E5484D")
-	delegateColorAccent = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+	delegateColorDone  = lipgloss.Color("#46A758")
+	delegateColorFocus = lipgloss.Color("#E5484D")
 )
+
+// delegateAdaptive picks a light/dark variant (lipgloss v2 removed
+// AdaptiveColor; detection duplicated locally since components cannot import
+// the views package back).
+var delegateAdaptive = func(light, dark string) color.Color {
+	return lipgloss.LightDark(detectDarkBG())(lipgloss.Color(light), lipgloss.Color(dark))
+}
+
+// detectDarkBG is a best-effort terminal-background probe (assumes dark).
+func detectDarkBG() (dark bool) {
+	defer func() {
+		if recover() != nil {
+			dark = true
+		}
+	}()
+	return lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
+}
 
 // Item represents a task in the list
 type Item struct {
@@ -79,14 +98,14 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	switch task.Status {
 	case models.DoneStatus:
 		titleStyle = titleStyle.
-			Foreground(lipgloss.AdaptiveColor{Light: "#9A9A9A", Dark: "#5C5C5C"}).
+			Foreground(delegateAdaptive("#9A9A9A", "#5C5C5C")).
 			Strikethrough(true)
 		glyphStyle = glyphStyle.Foreground(delegateColorDone)
 	case models.InProgressStatus:
 		glyphStyle = glyphStyle.Foreground(delegateColorFocus)
 		fallthrough
 	default:
-		titleStyle = titleStyle.Foreground(lipgloss.AdaptiveColor{Light: "#3F3F3F", Dark: "#EEEEEE"})
+		titleStyle = titleStyle.Foreground(delegateAdaptive("#3F3F3F", "#EEEEEE"))
 	}
 
 	title := task.Title
@@ -99,16 +118,16 @@ func (d TaskDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		estimate = fmt.Sprintf("%s %d/%d",
 			strings.Repeat("🍅", tomatoes),
 			task.CompletedPomodoros, task.EstimatedPomodoros)
-		estimateStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#8F8F8F", Dark: "#6E6E6E"})
+		estimateStyle := lipgloss.NewStyle().Foreground(delegateAdaptive("#8F8F8F", "#6E6E6E"))
 		if task.Status == models.DoneStatus {
-			estimateStyle = estimateStyle.Foreground(lipgloss.AdaptiveColor{Light: "#B4B4B4", Dark: "#454545"})
+			estimateStyle = estimateStyle.Foreground(delegateAdaptive("#B4B4B4", "#454545"))
 		}
 		estimate = estimateStyle.Render(estimate)
 	}
 
 	cursor := "  "
 	if selected {
-		cursor = lipgloss.NewStyle().Foreground(delegateColorAccent).Bold(true).Render("❯ ")
+		cursor = lipgloss.NewStyle().Foreground(delegateAdaptive("#874BFD", "#7D56F4")).Bold(true).Render("❯ ")
 		titleStyle = titleStyle.Bold(true)
 	}
 

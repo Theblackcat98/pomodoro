@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"pomodoro/src/models"
 	"pomodoro/src/utils"
 )
@@ -71,7 +71,7 @@ func (m Model) renderSettingsView() string {
 			// The value just changed: flash it bright and let it settle.
 			if i == m.anim.flashRow && m.anim.flashValue > 0 {
 				value = lipgloss.NewStyle().
-					Foreground(blendAdaptive(colorDim, colorText, m.anim.flashValue)).
+					Foreground(blendAdaptiveHex("#8F8F8F", "#6E6E6E", "#3F3F3F", "#EEEEEE", m.anim.flashValue)).
 					Bold(true).
 					Render(r.value)
 			} else {
@@ -114,7 +114,7 @@ func (m Model) handleSettingsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd
 		return m, tea.Batch(m.adjustSetting(1), waitForEvent(m.events))
 	case "-", "_", "h", "left":
 		return m, tea.Batch(m.adjustSetting(-1), waitForEvent(m.events))
-	case " ", "x", "enter":
+	case "space", "x", "enter":
 		return m, tea.Batch(m.toggleSetting(), waitForEvent(m.events))
 	}
 	return m, waitForEvent(m.events)
@@ -212,12 +212,9 @@ func (m *Model) toggleSetting() tea.Cmd {
 		m.settings.NotificationType = models.NotificationModes[next]
 	case setRowMouse:
 		m.settings.Mouse = !m.settings.Mouse
-		// Flip the terminal mouse mode alongside the setting.
-		if m.settings.Mouse {
-			extra = tea.EnableMouseCellMotion
-		} else {
-			extra = tea.DisableMouse
-		}
+		// The terminal mouse mode follows the View declaration on the next
+		// render — no imperative command needed in v2.
+		extra = nil
 	case setRowHookFocus, setRowHookBreak, setRowHookComplete:
 		return tea.Batch(m.openHookEditor(), waitForEvent(m.events))
 	default:

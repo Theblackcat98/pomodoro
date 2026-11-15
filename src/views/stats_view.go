@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/table"
+	"charm.land/lipgloss/v2"
 	"pomodoro/src/models"
 	"pomodoro/src/utils"
 )
@@ -131,7 +131,7 @@ func (m Model) renderHeatmap() string {
 			default:
 				intensity := float64(heatLevel(cell.Count, maxCount)) / 4
 				row += lipgloss.NewStyle().
-					Foreground(blendColors(resolveAdaptive(colorFaint), colorFocus, 0.25+0.75*intensity)).
+					Foreground(blendAdaptiveHex("#B4B4B4", "#454545", hexFocus, hexFocus, 0.25+0.75*intensity)).
 					Render("■")
 			}
 			row += " "
