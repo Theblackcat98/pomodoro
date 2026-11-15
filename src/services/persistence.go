@@ -18,14 +18,20 @@ type PersistenceService interface {
 	DeleteTask(id string) error
 	GetAllData() (*AppData, error)
 	ImportData(data *AppData) error
+	// PersistActiveSession stores (nil clears) the in-flight session so it
+	// can be resumed after the app exits.
+	PersistActiveSession(session *models.TimerSession) error
+	// GetActiveSession returns the stored in-flight session, or nil.
+	GetActiveSession() (*models.TimerSession, error)
 	Close() error
 }
 
 // AppData represents all application data for import/export
 type AppData struct {
-	Sessions []models.TimerSession `json:"sessions"`
-	Settings models.Settings       `json:"settings"`
-	Tasks    []*models.Task        `json:"tasks"`
+	Sessions      []models.TimerSession `json:"sessions"`
+	Settings      models.Settings       `json:"settings"`
+	Tasks         []*models.Task        `json:"tasks"`
+	ActiveSession *models.TimerSession  `json:"active_session,omitempty"`
 }
 
 // SessionFilter defines filters for querying sessions

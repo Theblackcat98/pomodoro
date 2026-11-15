@@ -12,6 +12,7 @@ type keyMap struct {
 	ForceQuit  key.Binding
 	StartPause key.Binding
 	Reset      key.Binding
+	Resume     key.Binding
 	Skip       key.Binding
 	QuickStart key.Binding
 	Add        key.Binding
@@ -34,6 +35,7 @@ var keys = keyMap{
 	ForceQuit:  key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "force quit")),
 	StartPause: key.NewBinding(key.WithKeys(" ", "enter"), key.WithHelp("space", "start/pause")),
 	Reset:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reset")),
+	Resume:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "resume recovered session")),
 	Skip:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip")),
 	QuickStart: key.NewBinding(key.WithKeys("1", "2", "3"), key.WithHelp("1/2/3", "15/25/35 min")),
 	Add:        key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),

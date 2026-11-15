@@ -65,7 +65,18 @@ go run ./cmd
 ```
 
 State (tasks, settings, session history) is stored as JSON in
-`~/.config/pomodoro/state.json`.
+`~/.config/pomodoro/state.json`. A session still running when you quit is
+saved and offered for resume (`R`) on the next launch — if it runs out while
+the app is closed, it is credited automatically.
+
+For external integrations the app publishes `$XDG_STATE_HOME/pomodoro/status.json`
+(`{"state","remaining_sec","focus_today","task",...}`, refreshed every second)
+and can run your own shell hooks on focus start, break start, and completion
+(edit them under Settings; commands run with `POMODORO_STATE` set).
+
+Notifications cycle through five modes: the in-app banner, a system sound,
+the terminal bell + OSC 9/777 (real desktop notifications on terminals that
+support them), desktop notifications via the OS daemon, and silent.
 
 ## Keyboard shortcuts
 

@@ -166,6 +166,64 @@ func TestPersistenceCorruptFileDoesNotLeakPartialDecode(t *testing.T) {
 	}
 }
 
+func TestPersistenceActiveSessionRoundTrip(t *testing.T) {
+	path := tempPath(t)
+	p, err := NewJSONPersistence(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	// None stored initially.
+	if s, err := p.GetActiveSession(); err != nil || s != nil {
+		t.Fatalf("initial active session = %v, %v; want nil, nil", s, err)
+	}
+
+	// Store one with attribution and remaining time.
+	start := time.Now()
+	stored := &models.TimerSession{
+		ID:        "active-1",
+		Type:      models.FocusSession,
+		Duration:  25 * time.Minute,
+		Remaining: 13 * time.Minute,
+		Status:    models.Running,
+		TaskID:    "task-9",
+		StartTime: &start,
+		CreatedAt: start,
+	}
+	if err := p.PersistActiveSession(stored); err != nil {
+		t.Fatalf("PersistActiveSession: %v", err)
+	}
+
+	got, err := p.GetActiveSession()
+	if err != nil || got == nil {
+		t.Fatalf("GetActiveSession: %v, %v", got, err)
+	}
+	if got.ID != "active-1" || got.TaskID != "task-9" || got.Remaining != 13*time.Minute {
+		t.Fatalf("active session = %+v", got)
+	}
+	if got.PersistedAt == nil {
+		t.Fatal("PersistedAt must be stamped for resume math")
+	}
+
+	// Survives a reopen (the whole point).
+	p2, err := NewJSONPersistence(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	got2, err := p2.GetActiveSession()
+	if err != nil || got2 == nil || got2.ID != "active-1" {
+		t.Fatalf("active session after reopen = %v, %v", got2, err)
+	}
+
+	// Clearing works.
+	if err := p2.PersistActiveSession(nil); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if s, _ := p2.GetActiveSession(); s != nil {
+		t.Fatalf("active session after clear = %v, want nil", s)
+	}
+}
+
 func TestPersistenceDeleteAndFilter(t *testing.T) {
 	path := tempPath(t)
 	p, err := NewJSONPersistence(path)

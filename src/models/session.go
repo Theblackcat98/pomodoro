@@ -27,5 +27,6 @@ type TimerSession struct {
 	TaskID      string        `json:"task_id,omitempty"` // Task the session worked on, if any
 	StartTime   *time.Time    `json:"start_time,omitempty"`
 	CompletedAt *time.Time    `json:"completed_at,omitempty"`
+	PersistedAt *time.Time    `json:"persisted_at,omitempty"` // when an in-flight session was saved for resume
 	CreatedAt   time.Time     `json:"created_at"`
 }

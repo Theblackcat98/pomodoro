@@ -5,10 +5,21 @@ import "time"
 type NotificationType string
 
 const (
-	SoundNotification  NotificationType = "sound"
-	VisualNotification NotificationType = "visual"
-	SilentNotification NotificationType = "silent"
+	SoundNotification   NotificationType = "sound"   // system sound player
+	BellNotification    NotificationType = "bell"    // BEL + OSC 9/777 terminal notification
+	DesktopNotification NotificationType = "desktop" // desktop notification (beeep)
+	VisualNotification  NotificationType = "visual"  // in-app flash banner only
+	SilentNotification  NotificationType = "silent"
 )
+
+// NotificationModes is the settings cycle order.
+var NotificationModes = []NotificationType{
+	VisualNotification,
+	SoundNotification,
+	BellNotification,
+	DesktopNotification,
+	SilentNotification,
+}
 
 type Settings struct {
 	ID                 string           `json:"id"`
@@ -22,6 +33,9 @@ type Settings struct {
 	Theme              string           `json:"theme"`                // Default: "default"
 	Mouse              bool             `json:"mouse"`                // Mouse: wheel scroll + tab clicks
 	SeenIntro          bool             `json:"seen_intro"`           // First-run hint already shown
+	HookFocusStart     string           `json:"hook_focus_start"`     // Shell command on focus start
+	HookBreakStart     string           `json:"hook_break_start"`     // Shell command on break start
+	HookComplete       string           `json:"hook_complete"`        // Shell command on session complete
 	CreatedAt          time.Time        `json:"created_at"`
 	UpdatedAt          time.Time        `json:"updated_at"`
 }

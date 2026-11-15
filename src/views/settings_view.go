@@ -20,6 +20,9 @@ const (
 	setRowAutoFocus
 	setRowNotify
 	setRowMouse
+	setRowHookFocus
+	setRowHookBreak
+	setRowHookComplete
 	setRowCount
 )
 
@@ -33,6 +36,12 @@ func (m Model) renderSettingsView() string {
 		}
 		return lipgloss.NewStyle().Foreground(colorFaint).Render("[ ]")
 	}
+	hookValue := func(v string) string {
+		if v == "" {
+			return lipgloss.NewStyle().Foreground(colorFaint).Render("(none)")
+		}
+		return truncate(v, 34)
+	}
 
 	rows := []row{
 		{"Focus duration", "‹ " + utils.FormatDurationHuman(m.settings.FocusDuration) + " ›"},
@@ -43,6 +52,9 @@ func (m Model) renderSettingsView() string {
 		{"Auto-start focus", boolMark(m.settings.AutoStartFocus)},
 		{"Notification", string(m.settings.NotificationType)},
 		{"Mouse", boolMark(m.settings.Mouse)},
+		{"Hook: focus start", hookValue(m.settings.HookFocusStart)},
+		{"Hook: break start", hookValue(m.settings.HookBreakStart)},
+		{"Hook: complete", hookValue(m.settings.HookComplete)},
 	}
 
 	lines := []string{
@@ -69,7 +81,14 @@ func (m Model) renderSettingsView() string {
 		lines = append(lines, cursor+label+"  "+value)
 	}
 
-	lines = append(lines, "", hintJoin(hint("j/k", "select"), hint("+/-", "adjust"), hint("space", "toggle")))
+	// Inline editor for the focused hook row.
+	if m.editingHook >= 0 {
+		field := lipgloss.NewStyle().Foreground(colorFocus).Bold(true).Render("edit")
+		lines = append(lines, "", field+"  "+m.hookInput.View(),
+			lipgloss.NewStyle().Foreground(colorDim).Render("enter saves · esc cancels · runs with POMODORO_STATE set"))
+	}
+
+	lines = append(lines, "", hintJoin(hint("j/k", "select"), hint("+/-", "adjust"), hint("space", "toggle"), hint("enter", "edit hook")))
 
 	return lipgloss.Place(m.width, max(10, m.height-6), lipgloss.Center, lipgloss.Center,
 		panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left, lines...)),
@@ -77,7 +96,11 @@ func (m Model) renderSettingsView() string {
 }
 
 // handleSettingsKey navigates and adjusts settings; every change persists.
-func (m Model) handleSettingsKey(key string) (tea.Model, tea.Cmd) {
+// While a hook is being edited, all keys go to the input.
+func (m Model) handleSettingsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	if m.editingHook >= 0 {
+		return m.handleHookEditKey(msg)
+	}
 	switch key {
 	case "up", "k":
 		if m.settingsCursor > 0 {
@@ -95,6 +118,58 @@ func (m Model) handleSettingsKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.toggleSetting(), waitForEvent(m.events))
 	}
 	return m, waitForEvent(m.events)
+}
+
+// handleHookEditKey drives the inline hook editor: enter saves, esc cancels,
+// everything else feeds the input.
+func (m Model) handleHookEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		value := m.hookInput.Value()
+		switch m.editingHook {
+		case setRowHookFocus:
+			m.settings.HookFocusStart = value
+		case setRowHookBreak:
+			m.settings.HookBreakStart = value
+		case setRowHookComplete:
+			m.settings.HookComplete = value
+		}
+		m.editingHook = -1
+		m.hookInput.Blur()
+		return m, tea.Batch(m.flashChangedRowCmd(), m.saveSettings(), m.toastf("Hook saved"), waitForEvent(m.events))
+	case "esc":
+		m.editingHook = -1
+		m.hookInput.Blur()
+		return m, waitForEvent(m.events)
+	}
+	var cmd tea.Cmd
+	m.hookInput, cmd = m.hookInput.Update(msg)
+	return m, tea.Batch(cmd, waitForEvent(m.events))
+}
+
+// openHookEditor starts editing the focused hook row (or toggles booleans
+// for the other row kinds via enter).
+func (m *Model) openHookEditor() tea.Cmd {
+	switch m.settingsCursor {
+	case setRowHookFocus:
+		m.editingHook = setRowHookFocus
+		m.hookInput.SetValue(m.settings.HookFocusStart)
+	case setRowHookBreak:
+		m.editingHook = setRowHookBreak
+		m.hookInput.SetValue(m.settings.HookBreakStart)
+	case setRowHookComplete:
+		m.editingHook = setRowHookComplete
+		m.hookInput.SetValue(m.settings.HookComplete)
+	default:
+		return nil
+	}
+	return m.hookInput.Focus()
+}
+
+// flashChangedRowCmd is the cmd-returning form of flashChangedRow.
+func (m *Model) flashChangedRowCmd() tea.Cmd {
+	m.flashChangedRow()
+	return m.kickAnim()
 }
 
 // adjustSetting steps the focused numeric setting by dir.
@@ -116,7 +191,8 @@ func (m *Model) adjustSetting(dir int) tea.Cmd {
 	return tea.Batch(m.saveSettings(), m.kickAnim())
 }
 
-// toggleSetting flips the focused boolean or cycles the notification mode.
+// toggleSetting flips the focused boolean, cycles the notification mode, or
+// opens the inline editor for a hook row.
 func (m *Model) toggleSetting() tea.Cmd {
 	var extra tea.Cmd
 	switch m.settingsCursor {
@@ -125,14 +201,15 @@ func (m *Model) toggleSetting() tea.Cmd {
 	case setRowAutoFocus:
 		m.settings.AutoStartFocus = !m.settings.AutoStartFocus
 	case setRowNotify:
-		switch m.settings.NotificationType {
-		case models.SoundNotification:
-			m.settings.NotificationType = models.VisualNotification
-		case models.VisualNotification:
-			m.settings.NotificationType = models.SilentNotification
-		default:
-			m.settings.NotificationType = models.SoundNotification
+		// Cycle through the declared modes in order.
+		next := 0
+		for i, mode := range models.NotificationModes {
+			if mode == m.settings.NotificationType {
+				next = (i + 1) % len(models.NotificationModes)
+				break
+			}
 		}
+		m.settings.NotificationType = models.NotificationModes[next]
 	case setRowMouse:
 		m.settings.Mouse = !m.settings.Mouse
 		// Flip the terminal mouse mode alongside the setting.
@@ -141,6 +218,8 @@ func (m *Model) toggleSetting() tea.Cmd {
 		} else {
 			extra = tea.DisableMouse
 		}
+	case setRowHookFocus, setRowHookBreak, setRowHookComplete:
+		return tea.Batch(m.openHookEditor(), waitForEvent(m.events))
 	default:
 		return nil
 	}

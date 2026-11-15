@@ -32,7 +32,7 @@ func helpContent() string {
 	body := strings.Join([]string{
 		section("General", []key.Binding{keys.Tab, keys.BackTab, keys.Help, keys.Quit, keys.ForceQuit}),
 		"",
-		section("Timer", []key.Binding{keys.StartPause, keys.Reset, keys.Skip, keys.QuickStart}),
+		section("Timer", []key.Binding{keys.StartPause, keys.Reset, keys.Resume, keys.Skip, keys.QuickStart}),
 		"",
 		section("Tasks", []key.Binding{keys.Add, keys.Toggle, keys.Delete, keys.FocusTask, keys.Nav}),
 		"",

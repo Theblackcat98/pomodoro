@@ -356,6 +356,34 @@ func (p *JSONPersistence) ImportData(data *AppData) error {
 	return p.save()
 }
 
+// PersistActiveSession stores a copy of the in-flight session (stamping
+// PersistedAt so resume can account for wall-clock time that passed while
+// the app was closed); nil clears it.
+func (p *JSONPersistence) PersistActiveSession(session *models.TimerSession) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if session == nil {
+		p.data.ActiveSession = nil
+	} else {
+		copyS := *session
+		now := time.Now()
+		copyS.PersistedAt = &now
+		p.data.ActiveSession = &copyS
+	}
+	return p.save()
+}
+
+// GetActiveSession returns the stored in-flight session, or nil when none.
+func (p *JSONPersistence) GetActiveSession() (*models.TimerSession, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.data.ActiveSession == nil {
+		return nil, nil
+	}
+	s := *p.data.ActiveSession
+	return &s, nil
+}
+
 // CorruptBackup returns the path the previous state file was moved to when it
 // could not be parsed (empty when the last load was clean). The UI shows it
 // once so the user knows where the old data lives.

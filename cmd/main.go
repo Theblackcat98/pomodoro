@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	clog "github.com/charmbracelet/log"
+	"pomodoro/src/components"
 	"pomodoro/src/services"
 	"pomodoro/src/utils"
 	"pomodoro/src/views"
@@ -48,4 +49,5 @@ func setupLogging() {
 	l.SetLevel(clog.InfoLevel)
 	l.SetReportTimestamp(false)
 	views.SetLogger(l)
+	components.SetLogger(l)
 }

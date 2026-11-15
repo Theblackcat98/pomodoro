@@ -141,6 +141,17 @@ type Model struct {
 	// render, used to route mouse clicks (mouse support is config-gated).
 	tabHits []tabHit
 
+	// pendingResume holds an in-flight session recovered from the state
+	// file; `R` on the timer tab resumes it.
+	pendingResume *models.TimerSession
+
+	// statusPath is the tmux/Waybar status file; empty disables writing it.
+	statusPath string
+
+	// Settings hook editor state (row index or -1 = closed).
+	editingHook int
+	hookInput   textinput.Model
+
 	// Phase-4 view state
 	sessTable      table.Model    // recent sessions (Stats)
 	helpViewport   viewport.Model // scrollable cheat sheet (Help)
@@ -288,10 +299,154 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 	}
 	m.timer.SetSettings(m.settings)
 	m.notifier = components.NewNotifier(m.settings.NotificationType)
+	m.recoverActiveSession()
+	m.initStatusPath()
+	m.editingHook = -1
+	hookInput := textinput.New()
+	hookInput.Placeholder = "shell command (POMODORO_STATE=focus_start|break_start|complete)"
+	hookInput.CharLimit = 200
+	m.hookInput = hookInput
 	m.helpViewport.SetContent(helpContent())
 	m.refreshSessionTable()
 
 	return m
+}
+
+// recoverActiveSession resolves an in-flight session persisted by a previous
+// run. If it ran out while the app was closed it is credited as completed;
+// otherwise it becomes pendingResume (`R` on the timer tab picks it up).
+func (m *Model) recoverActiveSession() {
+	if m.store == nil {
+		return
+	}
+	active, err := m.store.GetActiveSession()
+	if err != nil || active == nil {
+		return
+	}
+	if active.Status == models.Paused {
+		// Paused sessions hold their remaining time indefinitely.
+		m.pendingResume = active
+		m.pendingToast = "Paused session recovered — press R to resume"
+		return
+	}
+
+	// A running session kept ticking in wall-clock terms: subtract the time
+	// the app was closed.
+	away := time.Since(*active.PersistedAt)
+	active.Remaining -= away
+	if active.Remaining > 0 {
+		m.pendingResume = active
+		m.pendingToast = "Session in progress when the app quit — press R to resume"
+		return
+	}
+
+	// It finished while the app was away: credit it like a natural timeout.
+	now := time.Now()
+	active.Remaining = 0
+	active.Elapsed = active.Duration
+	active.Status = models.Completed
+	active.CompletedAt = &now
+	active.PersistedAt = nil
+	if err := m.store.SaveSession(active); err != nil {
+		logError("credit finished-while-away session", err)
+	}
+	if err := m.store.PersistActiveSession(nil); err != nil {
+		logError("clear active session", err)
+	}
+	m.sessions = append([]models.TimerSession{*active}, m.sessions...)
+	m.refreshSessionTable()
+	if active.Type == models.FocusSession {
+		if task := m.currentTask(); task != nil {
+			task.CompletedPomodoros++
+			logError("update task pomodoros", m.store.SaveTask(task))
+		}
+	}
+	m.pendingToast = "🍅 A session finished while the app was closed — credited"
+}
+
+// initStatusPath resolves the tmux/Waybar status file location.
+func (m *Model) initStatusPath() {
+	if dir, err := utils.StateDir(); err == nil {
+		m.statusPath = filepath.Join(dir, "status.json")
+	} else {
+		logError("resolve status dir", err)
+	}
+}
+
+// persistActive records (nil clears) the in-flight session so a quit or
+// crash can resume it later. Errors are logged; resume is a best-effort
+// feature and must never disturb the UI.
+func (m *Model) persistActive(session *models.TimerSession) {
+	if m.store == nil {
+		return
+	}
+	logError("persist active session", m.store.PersistActiveSession(session))
+}
+
+// fireSessionHook runs the user's shell hook for a session transition:
+// focus/break start (event == "start") or completion.
+func (m *Model) fireSessionHook(session *models.TimerSession, event string) {
+	switch {
+	case event == "complete":
+		components.HookEnv(m.settings.HookComplete, "complete")
+	case session.Type == models.FocusSession:
+		components.HookEnv(m.settings.HookFocusStart, "focus_start")
+	default:
+		components.HookEnv(m.settings.HookBreakStart, "break_start")
+	}
+}
+
+// statusPayload is the tmux/Waybar-facing status file contents.
+type statusPayload struct {
+	State        string `json:"state"` // running | paused | ready
+	Type         string `json:"type,omitempty"`
+	RemainingSec int    `json:"remaining_sec,omitempty"`
+	FocusToday   int    `json:"focus_today"`
+	Task         string `json:"task,omitempty"`
+	Updated      string `json:"updated"`
+}
+
+// writeStatusFile atomically publishes the current state for external bars
+// (tmux status, Waybar). Cheap (one tiny file) and never fatal.
+func (m *Model) writeStatusFile() {
+	if m.statusPath == "" {
+		return
+	}
+	p := statusPayload{
+		State:      "ready",
+		FocusToday: m.todayCount(),
+		Updated:    time.Now().Format(time.RFC3339),
+	}
+	if s := m.timer.GetCurrentSession(); s != nil {
+		switch s.Status {
+		case models.Running:
+			p.State = "running"
+		case models.Paused:
+			p.State = "paused"
+		case models.Completed:
+			p.State = "ready"
+		}
+		if s.Status == models.Running || s.Status == models.Paused {
+			p.Type = string(s.Type)
+			p.RemainingSec = int(s.Remaining.Seconds())
+			if task := m.currentTask(); task != nil {
+				p.Task = task.Title
+			}
+		}
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		logError("encode status file", err)
+		return
+	}
+	tmp := m.statusPath + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		logError("write status file", err)
+		return
+	}
+	if err := os.Rename(tmp, m.statusPath); err != nil {
+		logError("publish status file", err)
+	}
 }
 
 // showPendingToastMsg tells the first Update to surface toasts queued during
@@ -358,6 +513,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		cmds = append(cmds, m.syncTimerAnim())
+		// Keep the tmux/Waybar status file's remaining-seconds fresh.
+		m.writeStatusFile()
 		return m, tea.Batch(cmds...)
 
 	case animTickMsg:
@@ -383,10 +540,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handledCompletionID = ""
 		m.anim.ring.snap(0)
 		m.lastDigits = ""
+		m.persistActive(msg.Session)
+		m.fireSessionHook(msg.Session, "start")
+		m.writeStatusFile()
 		return m, tea.Batch(m.progress.SetPercent(0), waitForEvent(m.events))
 
 	case models.SessionPausedMsg, models.SessionResumedMsg:
 		m.flash = ""
+		if s := m.timer.GetCurrentSession(); s != nil {
+			m.persistActive(s)
+		}
+		m.writeStatusFile()
 
 	case models.SessionCompletedMsg:
 		m.seenSessionID = msg.Session.ID
@@ -402,6 +566,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		m.spinActive = false
 		m.lastDigits = ""
+		m.persistActive(nil)
+		m.writeStatusFile()
 		// Sweep the ring back to empty.
 		m.anim.ring.setTarget(0)
 		return m, tea.Batch(m.progress.SetPercent(0), m.kickAnim(), waitForEvent(m.events))
@@ -507,6 +673,13 @@ func (m *Model) applySessionCompletion(session *models.TimerSession) tea.Cmd {
 		m.flash = "☕ Break over — back to focus"
 	}
 	m.notifier.PlaySessionCompleteSound()
+
+	// External notification channels (bell/OSC, desktop) per the configured
+	// mode; sound is handled by the Notifier above.
+	components.NotifyExternal(m.settings.NotificationType, "Pomodoro", m.flash)
+	m.fireSessionHook(session, "complete")
+	m.persistActive(nil)
+	m.writeStatusFile()
 
 	// Completion motion: the ring sweeps full while its accent morphs from
 	// the finished session's color to the next one's.
@@ -825,7 +998,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case TabStats:
 		return m.handleStatsKey(msg, key)
 	case TabSettings:
-		return m.handleSettingsKey(key)
+		return m.handleSettingsKey(msg, key)
 	case TabHelp:
 		return m.handleHelpKey(msg, key)
 	}
@@ -848,7 +1021,7 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.errToast("resume", m.timer.ResumeSession()), waitForEvent(m.events))
 		}
 
-	case "r":
+	case "r", "R":
 		// Reset back to the ready state: abandon without credit.
 		if active {
 			if err := m.timer.StopSession(); err != nil {
@@ -862,6 +1035,17 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 			m.handledCompletionID = ""
 			m.anim.ring.setTarget(0)
 			return m, tea.Batch(m.progress.SetPercent(0), m.kickAnim(), waitForEvent(m.events))
+		}
+		// Nothing running: R picks up a session recovered from a previous
+		// run (resume after quit/crash).
+		if m.pendingResume != nil {
+			s := m.pendingResume
+			m.pendingResume = nil
+			err := m.timer.StartSessionForTask(s.TaskID, s.Type, s.Remaining)
+			if err != nil {
+				return m, tea.Batch(m.errToast("resume session", err), waitForEvent(m.events))
+			}
+			return m, tea.Batch(m.toastf("Resumed — %s left", utils.FormatDuration(s.Remaining)), waitForEvent(m.events))
 		}
 
 	case "s":
@@ -1119,6 +1303,12 @@ func (m Model) sessionRunning() bool {
 
 func (m Model) quitNow() (tea.Model, tea.Cmd) {
 	m.timer.Shutdown()
+	// A session still in flight is parked for resume (or credited on next
+	// launch if it runs out while the app is closed).
+	if s := m.timer.GetCurrentSession(); s != nil && (s.Status == models.Running || s.Status == models.Paused) {
+		m.persistActive(s)
+	}
+	m.writeStatusFile()
 	if m.store != nil {
 		logError("flush state on quit", m.store.Close())
 	}
