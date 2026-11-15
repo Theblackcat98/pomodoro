@@ -110,6 +110,7 @@ type Model struct {
 	// Tasks view state
 	taskList   *components.TaskList
 	adding     bool
+	editingID  string // non-empty while editing that task (add-bar reused)
 	addTitle   textinput.Model
 	addDesc    textarea.Model
 	addEst     int
@@ -606,6 +607,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Unhandled messages (e.g. the task list's async FilterMatchesMsg) go to
+	// the task list — without this, live filtering never applies because the
+	// matches computed in a cmd are dropped here.
+	if cmd := m.taskList.Update(msg); cmd != nil {
+		return m, tea.Batch(cmd, waitForEvent(m.events))
+	}
 	return m, waitForEvent(m.events)
 }
 
@@ -943,6 +950,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.deleteArm = false
 		case m.tab == TabHelp:
 			m.tab = TabTimer
+		case m.tab == TabTasks && m.taskList.IsFiltering():
+			// The list's filter owns esc while it is active (cancels it).
+			return m, tea.Batch(m.taskList.Update(msg), waitForEvent(m.events))
 		}
 		return m, waitForEvent(m.events)
 
@@ -1074,14 +1084,46 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// While the list's filter is active, all keys belong to the list (esc
+	// still escapes the app-level states first, handled above).
+	if m.taskList.IsFiltering() {
+		cmds = append(cmds, m.taskList.Update(msg))
+		return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
+	}
+
 	switch key {
 	case "a":
 		m.adding = true
+		m.editingID = ""
 		m.addEst = 1
 		m.addFocus = addFieldTitle
 		m.addTitle.Reset()
 		m.addDesc.Reset()
 		return m, tea.Batch(m.addTitle.Focus(), waitForEvent(m.events))
+
+	case "e":
+		// Edit the selected task in the same slim form, pre-filled.
+		if task := m.taskList.GetSelected(); task != nil {
+			m.adding = true
+			m.editingID = task.ID
+			m.addEst = task.EstimatedPomodoros
+			m.addFocus = addFieldTitle
+			m.addTitle.SetValue(task.Title)
+			m.addDesc.SetValue(task.Description)
+			// Cursor at the end of the existing title.
+			m.addTitle.SetCursor(len([]rune(task.Title)))
+			return m, tea.Batch(m.addTitle.Focus(), waitForEvent(m.events))
+		}
+		return m, waitForEvent(m.events)
+
+	case "A":
+		// Archive toggle: hide/show completed tasks.
+		hide := !m.taskList.DoneHidden()
+		m.taskList.HideDone(hide)
+		if hide {
+			return m, tea.Batch(m.toastf("Done tasks hidden (A to show)"), waitForEvent(m.events))
+		}
+		return m, tea.Batch(m.toastf("Done tasks visible"), waitForEvent(m.events))
 
 	case "x":
 		if task := m.taskList.GetSelected(); task != nil {
@@ -1124,9 +1166,9 @@ func (m Model) handleTasksKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
 	}
 
-	// Navigation goes to the bubbles list.
+	// Navigation and filtering go to the bubbles list.
 	switch key {
-	case "up", "down", "j", "k", "home", "end", "pgup", "pgdown", "g", "G":
+	case "up", "down", "j", "k", "home", "end", "pgup", "pgdown", "g", "G", "/":
 		cmds = append(cmds, m.taskList.Update(msg))
 	}
 
@@ -1175,13 +1217,15 @@ func (m *Model) confirmDeleteTask() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(append(cmds, waitForEvent(m.events))...)
 }
 
-// handleAddFormKey routes keys while the new-task form is open.
+// handleAddFormKey routes keys while the new-task form is open. The same
+// form edits an existing task when editingID is set.
 func (m Model) handleAddFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg.String() {
 	case "esc":
 		m.adding = false
+		m.editingID = ""
 		m.addTitle.Blur()
 		m.addDesc.Blur()
 		return m, waitForEvent(m.events)
@@ -1191,15 +1235,34 @@ func (m Model) handleAddFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if title == "" {
 			return m, tea.Batch(m.toastf("Give the task a title first"), waitForEvent(m.events))
 		}
-		task := models.NewTask(title, m.addDesc.Value(), m.addEst)
-		m.tasks = append(m.tasks, task)
-		m.taskList.AddTask(task)
-		// Success toast first: a later error toast must show on top.
-		success := m.toastf("Added: %s", task.Title)
-		if m.store != nil {
-			cmd = m.errToast("save task", m.store.SaveTask(task))
+		var success tea.Cmd
+		if m.editingID != "" {
+			// Update the existing task in place.
+			for _, t := range m.tasks {
+				if t.ID == m.editingID {
+					t.Title = title
+					t.Description = m.addDesc.Value()
+					t.EstimatedPomodoros = m.addEst
+					m.taskList.UpdateTask(t)
+					success = m.toastf("Saved: %s", t.Title)
+					if m.store != nil {
+						cmd = m.errToast("save task", m.store.SaveTask(t))
+					}
+					break
+				}
+			}
+		} else {
+			task := models.NewTask(title, m.addDesc.Value(), m.addEst)
+			m.tasks = append(m.tasks, task)
+			m.taskList.AddTask(task)
+			// Success toast first: a later error toast must show on top.
+			success = m.toastf("Added: %s", task.Title)
+			if m.store != nil {
+				cmd = m.errToast("save task", m.store.SaveTask(task))
+			}
 		}
 		m.adding = false
+		m.editingID = ""
 		m.addTitle.Blur()
 		m.addDesc.Blur()
 		return m, tea.Batch(success, cmd, waitForEvent(m.events))

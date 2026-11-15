@@ -32,11 +32,15 @@ func (m Model) renderTasksView() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-// renderAddBar draws the slim new-task form.
+// renderAddBar draws the slim new-task form (reused for editing).
 func (m Model) renderAddBar() string {
+	heading := "new task"
+	if m.editingID != "" {
+		heading = "edit task"
+	}
 	divider := lipgloss.NewStyle().
 		Foreground(colorFaint).
-		Render("── new task " + strings.Repeat("─", max(10, m.width/2-12)))
+		Render("── " + heading + " " + strings.Repeat("─", max(10, m.width/2-12)))
 
 	estimate := lipgloss.NewStyle().Foreground(colorDim).Render(fmt.Sprintf("🍅 × %d", m.addEst))
 

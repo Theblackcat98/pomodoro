@@ -16,8 +16,11 @@ type keyMap struct {
 	Skip       key.Binding
 	QuickStart key.Binding
 	Add        key.Binding
+	Edit       key.Binding
 	Toggle     key.Binding
 	Delete     key.Binding
+	Archive    key.Binding
+	Filter     key.Binding
 	FocusTask  key.Binding
 	Nav        key.Binding
 	Adjust     key.Binding
@@ -39,8 +42,11 @@ var keys = keyMap{
 	Skip:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip")),
 	QuickStart: key.NewBinding(key.WithKeys("1", "2", "3"), key.WithHelp("1/2/3", "15/25/35 min")),
 	Add:        key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),
+	Edit:       key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 	Toggle:     key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "toggle done")),
 	Delete:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+	Archive:    key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "hide/show done")),
+	Filter:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter tasks")),
 	FocusTask:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "focus task")),
 	Nav:        key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "move")),
 	Adjust:     key.NewBinding(key.WithKeys("+", "-", "="), key.WithHelp("+/-", "adjust")),

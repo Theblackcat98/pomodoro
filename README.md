@@ -91,6 +91,9 @@ support them), desktop notifications via the OS daemon, and silent.
 | `a`              | Add a task (Tasks view)                   |
 | `x`              | Toggle a task done                        |
 | `d`              | Delete a task (`y` confirms)              |
+| `e`              | Edit the selected task                    |
+| `/`              | Filter tasks (fuzzy; esc clears)          |
+| `A`              | Hide/show completed tasks                 |
 | `enter`          | Focus the selected task                   |
 | `j` / `k`        | Move through lists and panels             |
 | `+` / `-`        | Adjust the selected setting (Settings)    |

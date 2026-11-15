@@ -135,9 +135,10 @@ type CheckAnim struct {
 
 // TaskList represents the task list component using Bubbles list
 type TaskList struct {
-	list  list.Model
-	tasks []*models.Task
-	anim  CheckAnim
+	list     list.Model
+	tasks    []*models.Task
+	anim     CheckAnim
+	hideDone bool // archive view: completed tasks hidden
 }
 
 // NewTaskList creates a new task list component
@@ -151,15 +152,34 @@ func NewTaskList() *TaskList {
 
 	// The delegate animates through tl.anim (pointer keeps them in sync).
 	// The list's built-in furniture is disabled: the app renders its own
-	// chrome (header, hints, empty state).
+	// chrome (header, hints, empty state). Filtering (`/`) stays enabled —
+	// items expose FilterValue via their title.
 	tl.list = list.New(listItems, TaskDelegate{anim: &tl.anim}, 0, 0)
 	tl.list.SetShowTitle(false)
 	tl.list.SetShowStatusBar(false)
 	tl.list.SetShowHelp(false)
 	tl.list.SetShowPagination(false)
-	tl.list.SetFilteringEnabled(false)
+	tl.list.SetFilteringEnabled(true)
+	tl.list.SetStatusBarItemName("task", "tasks")
 
 	return tl
+}
+
+// HideDone shows/hides completed tasks (the archive toggle).
+func (tl *TaskList) HideDone(hide bool) {
+	tl.hideDone = hide
+	tl.syncList()
+}
+
+// DoneHidden reports whether completed tasks are currently hidden.
+func (tl *TaskList) DoneHidden() bool {
+	return tl.hideDone
+}
+
+// IsFiltering reports whether the list's built-in filter is active (typing
+// a `/` query); while it is, keys belong to the list.
+func (tl *TaskList) IsFiltering() bool {
+	return tl.list.FilterState() != list.Unfiltered
 }
 
 // SetCheckAnim sets the row animation target. An empty id clears it.
@@ -211,10 +231,13 @@ func (tl *TaskList) UpdateTask(updatedTask *models.Task) {
 
 // syncList rebuilds the bubbles list items from tl.tasks so the two views of
 // the data can never drift apart (the old per-index copy did when tasks were
-// removed).
+// removed). Done tasks are dropped while the archive toggle hides them.
 func (tl *TaskList) syncList() {
 	items := make([]list.Item, 0, len(tl.tasks))
 	for _, task := range tl.tasks {
+		if tl.hideDone && task.Status == models.DoneStatus {
+			continue
+		}
 		items = append(items, Item{Task: task})
 	}
 	tl.list.SetItems(items)
