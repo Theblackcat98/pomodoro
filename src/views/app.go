@@ -297,6 +297,9 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 			logError("save default settings", store.SaveSettings(m.settings))
 		}
 	}
+	// Build the palette from the persisted theme (legacy "default" → dark).
+	// Later theme changes call buildStyles again for an immediate repaint.
+	buildStyles(m.settings.Theme)
 	// One-time welcome hint on the very first run (a toast, not a blocking
 	// wizard — the best TUIs prefer zero-friction tips over modals).
 	if !m.settings.SeenIntro {

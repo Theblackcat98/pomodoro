@@ -19,12 +19,22 @@ const (
 	setRowAutoBreak
 	setRowAutoFocus
 	setRowNotify
+	setRowTheme
 	setRowMouse
 	setRowHookFocus
 	setRowHookBreak
 	setRowHookComplete
 	setRowCount
 )
+
+// themeLabel is the effective palette name shown in the settings row. The
+// legacy "default" value reads as dark, matching what the user sees.
+func themeLabel(theme string) string {
+	if resolvePalette(theme).dark {
+		return ThemeDark
+	}
+	return ThemeLight
+}
 
 // renderSettingsView draws the editable settings; changes save instantly.
 func (m Model) renderSettingsView() string {
@@ -51,6 +61,7 @@ func (m Model) renderSettingsView() string {
 		{"Auto-start breaks", boolMark(m.settings.AutoStartBreaks)},
 		{"Auto-start focus", boolMark(m.settings.AutoStartFocus)},
 		{"Notification", string(m.settings.NotificationType)},
+		{"Theme", "‹ " + themeLabel(m.settings.Theme) + " ›"},
 		{"Mouse", boolMark(m.settings.Mouse)},
 		{"Hook: focus start", hookValue(m.settings.HookFocusStart)},
 		{"Hook: break start", hookValue(m.settings.HookBreakStart)},
@@ -210,6 +221,16 @@ func (m *Model) toggleSetting() tea.Cmd {
 			}
 		}
 		m.settings.NotificationType = models.NotificationModes[next]
+	case setRowTheme:
+		// Toggle dark ↔ light; the legacy "default" value cycles to light.
+		if m.settings.Theme == ThemeLight {
+			m.settings.Theme = ThemeDark
+		} else {
+			m.settings.Theme = ThemeLight
+		}
+		// Rebuild the shared styles now so the change shows without restart;
+		// saveSettings below persists the chosen value.
+		buildStyles(m.settings.Theme)
 	case setRowMouse:
 		m.settings.Mouse = !m.settings.Mouse
 		// The terminal mouse mode follows the View declaration on the next

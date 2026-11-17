@@ -203,11 +203,11 @@ func blendColors(aHex, bHex string, t float64) color.Color {
 	return lipgloss.Color(ca.BlendLuv(cb, t).Clamped().Hex())
 }
 
-// blendAdaptiveHex blends two light/dark hex pairs using the resolved
-// terminal background (v2 replacement for the AdaptiveColor-based helper).
+// blendAdaptiveHex blends two light/dark hex pairs using the active theme's
+// palette (v2 replacement for the AdaptiveColor-based helper).
 func blendAdaptiveHex(lightA, darkA, lightB, darkB string, t float64) color.Color {
 	a, b := lightA, lightB
-	if hasDarkBG {
+	if activePalette.dark {
 		a, b = darkA, darkB
 	}
 	return blendColors(a, b, t)
