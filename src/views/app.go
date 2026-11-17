@@ -158,6 +158,13 @@ type Model struct {
 	helpViewport   viewport.Model // scrollable cheat sheet (Help)
 	help           help.Model     // short help row (Help footer)
 	settingsCursor int            // focused row (Settings)
+
+	// Session-history sort/filter state (Stats).
+	statsSortCol     int // -1 = no explicit sort (newest-first), else column 0..3
+	statsSortAsc     bool
+	statsFiltering   bool
+	statsFilter      string // applied case-insensitive substring
+	statsFilterInput textinput.Model
 }
 
 // tabHit is the rendered column range of one header tab.
@@ -223,17 +230,18 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 	timer.RegisterObserver(events)
 
 	m := Model{
-		timer:    timer,
-		store:    store,
-		events:   events.ch,
-		tab:      initialTab(),
-		taskList: components.NewTaskList(),
-		addEst:   1,
-		clock:    time.Now(),
-		anim:     newAnimSet(),
-		tabHits:  computeTabHits(),
-		progress: progress.New(progress.WithDefaultBlend(), progress.WithWidth(40)),
-		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		timer:        timer,
+		store:        store,
+		events:       events.ch,
+		tab:          initialTab(),
+		taskList:     components.NewTaskList(),
+		addEst:       1,
+		clock:        time.Now(),
+		anim:         newAnimSet(),
+		tabHits:      computeTabHits(),
+		statsSortCol: -1, // default history order is newest-first
+		progress:     progress.New(progress.WithDefaultBlend(), progress.WithWidth(40)),
+		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		sessTable: table.New(
 			table.WithColumns([]table.Column{
 				{Title: "WHEN", Width: 7},
@@ -307,6 +315,10 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 	hookInput.Placeholder = "shell command (POMODORO_STATE=focus_start|break_start|complete)"
 	hookInput.CharLimit = 200
 	m.hookInput = hookInput
+	filterInput := textinput.New()
+	filterInput.Placeholder = "Filter sessions…"
+	filterInput.CharLimit = 120
+	m.statsFilterInput = filterInput
 	m.helpViewport.SetContent(helpContent())
 	m.refreshSessionTable()
 
@@ -952,6 +964,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleAddFormKey(msg)
 	}
 
+	// While the history filter is open it owns every key (enter applies,
+	// esc cancels) — the same idiom as the settings hook editor.
+	if m.tab == TabStats && m.statsFiltering {
+		return m.handleStatsFilterKey(msg)
+	}
+
 	switch key {
 	case "esc":
 		switch {
@@ -1316,7 +1334,8 @@ func (m Model) handleAddFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, waitForEvent(m.events))
 }
 
-// handleStatsKey scrolls the recent-sessions table and exports history.
+// handleStatsKey scrolls the recent-sessions table, sorts/filters history,
+// and exports data.
 func (m Model) handleStatsKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch key {
@@ -1324,6 +1343,19 @@ func (m Model) handleStatsKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.C
 		var updated table.Model
 		updated, cmd = m.sessTable.Update(msg)
 		m.sessTable = updated
+	case "1", "2", "3", "4":
+		col := int(key[0] - '1')
+		if m.statsSortCol == col {
+			m.statsSortAsc = !m.statsSortAsc
+		} else {
+			m.statsSortCol = col
+			m.statsSortAsc = true
+		}
+		m.refreshSessionTable()
+	case "/":
+		m.statsFiltering = true
+		m.statsFilterInput.SetValue(m.statsFilter)
+		cmd = m.statsFilterInput.Focus()
 	case "e":
 		cmd = m.exportData()
 	}

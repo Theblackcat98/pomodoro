@@ -2,10 +2,12 @@ package views
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"pomodoro/src/models"
 	"pomodoro/src/utils"
@@ -24,7 +26,7 @@ func (m Model) renderStatsView() string {
 	}
 
 	cards := m.statCards()
-	tableTitle := lipgloss.NewStyle().Foreground(colorDim).Render("Recent sessions")
+	tableTitle := m.statsHeader()
 
 	// Compact terminals keep only the essentials.
 	if m.compact() {
@@ -177,10 +179,132 @@ func (m Model) renderPerTask() string {
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
+// statsSortColumns are the table columns in the order the 1-4 keys address.
+var statsSortColumns = []string{"WHEN", "TYPE", "LENGTH", "TASK"}
+
+// statsColumns returns the table columns with a marker on the active sort
+// column so the current ordering is visible in the header.
+func (m Model) statsColumns() []table.Column {
+	cols := []table.Column{
+		{Title: "WHEN", Width: 7},
+		{Title: "TYPE", Width: 15},
+		{Title: "LENGTH", Width: 9},
+		{Title: "TASK", Width: 32},
+	}
+	if m.statsSortCol >= 0 && m.statsSortCol < len(cols) {
+		marker := " ▼"
+		if m.statsSortAsc {
+			marker = " ▲"
+		}
+		cols[m.statsSortCol].Title += marker
+	}
+	return cols
+}
+
+// statsHeader renders the table title plus the active sort/filter indicators.
+func (m Model) statsHeader() string {
+	title := lipgloss.NewStyle().Foreground(colorDim).Render("Recent sessions")
+	if m.statsSortCol >= 0 && m.statsSortCol < len(statsSortColumns) {
+		arrow := "▼"
+		if m.statsSortAsc {
+			arrow = "▲"
+		}
+		title += lipgloss.NewStyle().Foreground(colorFaint).Render(
+			"  sort " + statsSortColumns[m.statsSortCol] + " " + arrow)
+	}
+	if m.statsFilter != "" {
+		title += lipgloss.NewStyle().Foreground(colorFocus).Render("  filter: " + m.statsFilter)
+	}
+	if m.statsFiltering {
+		title += "  " + m.statsFilterInput.View()
+	}
+	return title
+}
+
+// statsSessionTitle returns the task title displayed for a session.
+func (m Model) statsSessionTitle(s models.TimerSession) string {
+	if s.TaskID != "" {
+		if t := m.taskByID(s.TaskID); t != nil {
+			return t.Title
+		}
+	}
+	return "—"
+}
+
+// sortedFilteredSessions applies the active filter and sort to the FULL
+// history slice. The 50-row cap is a render concern applied later in
+// refreshSessionTable, so filtering/sorting never run on a truncated set.
+func (m Model) sortedFilteredSessions() []models.TimerSession {
+	list := make([]models.TimerSession, 0, len(m.sessions))
+	needle := strings.ToLower(m.statsFilter)
+	for _, s := range m.sessions {
+		if needle != "" {
+			task := strings.ToLower(m.statsSessionTitle(s))
+			kind := strings.ToLower(string(s.Type))
+			label := strings.ToLower(utils.FormatSessionTypeShort(s.Type))
+			if !strings.Contains(task, needle) &&
+				!strings.Contains(kind, needle) &&
+				!strings.Contains(label, needle) {
+				continue
+			}
+		}
+		list = append(list, s)
+	}
+
+	// No explicit sort: keep the stored newest-first order.
+	if m.statsSortCol < 0 || m.statsSortCol >= len(statsSortColumns) {
+		return list
+	}
+
+	col := m.statsSortCol
+	cmp := func(a, b models.TimerSession) int {
+		switch col {
+		case 0: // WHEN
+			at, bt := time.Time{}, time.Time{}
+			if a.CompletedAt != nil {
+				at = *a.CompletedAt
+			}
+			if b.CompletedAt != nil {
+				bt = *b.CompletedAt
+			}
+			if at.Before(bt) {
+				return -1
+			}
+			if at.After(bt) {
+				return 1
+			}
+		case 1: // TYPE
+			return strings.Compare(strings.ToLower(string(a.Type)), strings.ToLower(string(b.Type)))
+		case 2: // LENGTH
+			ae, be := sessionElapsed(a), sessionElapsed(b)
+			if ae < be {
+				return -1
+			}
+			if ae > be {
+				return 1
+			}
+		case 3: // TASK
+			return strings.Compare(strings.ToLower(m.statsSessionTitle(a)), strings.ToLower(m.statsSessionTitle(b)))
+		}
+		return 0
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		c := cmp(list[i], list[j])
+		if m.statsSortAsc {
+			return c < 0
+		}
+		return c > 0
+	})
+	return list
+}
+
 // refreshSessionTable rebuilds the recent-sessions table rows from history.
+// Filtering and sorting run on all sessions; only the rendered rows are
+// capped at 50.
 func (m *Model) refreshSessionTable() {
-	rows := make([]table.Row, 0, len(m.sessions))
-	for i, s := range m.sessions {
+	list := m.sortedFilteredSessions()
+	rows := make([]table.Row, 0, min(50, len(list)))
+	for i, s := range list {
 		if i >= 50 {
 			break
 		}
@@ -188,20 +312,38 @@ func (m *Model) refreshSessionTable() {
 		if s.CompletedAt != nil {
 			when = s.CompletedAt.Format("15:04")
 		}
-		task := "—"
-		if s.TaskID != "" {
-			if t := m.taskByID(s.TaskID); t != nil {
-				task = t.Title
-			}
-		}
 		rows = append(rows, table.Row{
 			when,
 			utils.FormatSessionTypeShort(s.Type),
 			utils.FormatDurationHuman(sessionElapsed(s)),
-			task,
+			m.statsSessionTitle(s),
 		})
 	}
+	m.sessTable.SetColumns(m.statsColumns())
 	m.sessTable.SetRows(rows)
+}
+
+// handleStatsFilterKey drives the inline history filter: enter applies,
+// esc cancels and clears, everything else feeds the input.
+func (m Model) handleStatsFilterKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		m.statsFilter = strings.TrimSpace(m.statsFilterInput.Value())
+		m.statsFiltering = false
+		m.statsFilterInput.Blur()
+		m.refreshSessionTable()
+	case "esc":
+		m.statsFilter = ""
+		m.statsFilterInput.SetValue("")
+		m.statsFiltering = false
+		m.statsFilterInput.Blur()
+		m.refreshSessionTable()
+	default:
+		var cmd tea.Cmd
+		m.statsFilterInput, cmd = m.statsFilterInput.Update(msg)
+		return m, tea.Batch(cmd, waitForEvent(m.events))
+	}
+	return m, waitForEvent(m.events)
 }
 
 func (m Model) taskByID(id string) *models.Task {
