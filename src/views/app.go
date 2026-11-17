@@ -970,6 +970,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleStatsFilterKey(msg)
 	}
 
+	// While the settings hook editor is open it owns every key: typed keys go to
+	// the input, enter saves, esc discards. Without this guard the app-level
+	// switch below swallows esc (and q, tab, ?) before settings ever sees it,
+	// so the editor could not be cancelled.
+	if m.tab == TabSettings && m.editingHook >= 0 {
+		return m.handleSettingsKey(msg, key)
+	}
+
 	switch key {
 	case "esc":
 		switch {

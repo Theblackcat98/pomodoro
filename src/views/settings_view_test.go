@@ -166,16 +166,51 @@ func TestSettingsHookEditor(t *testing.T) {
 			m = driveKey(m, string(c))
 		}
 
-		// The app-level esc case in handleKey returns before routing keys to
-		// the settings tab, so deliver esc to the real settings key handler
-		// (which forwards it to the editor) to exercise the discard path.
-		next, _ := m.handleSettingsKey(keyPress("esc"), "esc")
-		m = next.(Model)
+		// Full app routing: the open editor must receive esc and discard.
+		m = driveKey(m, "esc")
 		if m.editingHook != -1 {
 			t.Fatalf("editingHook after esc = %d, want -1 (closed)", m.editingHook)
 		}
 		if got := m.settings.HookBreakStart; got != original {
 			t.Fatalf("HookBreakStart after esc = %q, want original %q (discarded)", got, original)
+		}
+	})
+}
+
+// Regression: the app-level key switch used to swallow esc (and q, tab, ?) before
+// settings routing, leaving the hook editor impossible to cancel. The editor now
+// owns every key while open, so none of those may leak out of it.
+func TestSettingsHookEditorOwnsKeys(t *testing.T) {
+	m := newBareModel()
+	m.tab = TabSettings
+	m.settingsCursor = setRowHookBreak
+	m = driveKey(m, "enter")
+	if m.editingHook != setRowHookBreak {
+		t.Fatalf("enter on hook row set editingHook = %d, want %d", m.editingHook, setRowHookBreak)
+	}
+
+	t.Run("q does not quit and lands in the input", func(t *testing.T) {
+		before := m.tab
+		next := driveKey(m, "q")
+		if next.confirmQuit || next.quitting {
+			t.Fatalf("q while editing triggered quit (confirmQuit=%v quitting=%v)", next.confirmQuit, next.quitting)
+		}
+		if next.tab != before {
+			t.Fatalf("q while editing changed tab %v -> %v", before, next.tab)
+		}
+		if next.editingHook != setRowHookBreak {
+			t.Fatalf("q while editing closed the editor (editingHook=%d)", next.editingHook)
+		}
+	})
+
+	t.Run("tab does not switch tabs", func(t *testing.T) {
+		before := m.tab
+		next := driveKey(m, "tab")
+		if next.tab != before {
+			t.Fatalf("tab while editing switched tab %v -> %v", before, next.tab)
+		}
+		if next.editingHook != setRowHookBreak {
+			t.Fatalf("tab while editing closed the editor (editingHook=%d)", next.editingHook)
 		}
 	})
 }
