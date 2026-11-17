@@ -37,6 +37,8 @@ func (m Model) View() tea.View {
 		body = m.renderSettingsView()
 	case TabHelp:
 		body = m.renderHelpView()
+	case TabStopwatch:
+		body = m.renderStopwatchView()
 	default:
 		body = m.renderTimerView()
 	}
@@ -191,6 +193,14 @@ func (m Model) renderStatusBar() string {
 
 // statusChip returns the label + color for the left status chip.
 func (m Model) statusChip() (string, color.Color) {
+	// On the stopwatch tab the chip reflects the stopwatch, not the timer
+	// session (which may be idle or running independently).
+	if m.tab == TabStopwatch {
+		if m.stopwatch.engine.Running() {
+			return "● COUNTING", colorFocus
+		}
+		return "○ STOPWATCH", colorNeutral
+	}
 	session := m.timer.GetCurrentSession()
 	switch {
 	case session == nil || session.Status == models.Completed:
@@ -224,6 +234,8 @@ func (m Model) contextualHints() string {
 			return hintJoin(hint("space", "start/pause"), hint("?", "help"))
 		case TabTasks:
 			return hintJoin(hint("a", "add"), hint("?", "help"))
+		case TabStopwatch:
+			return hintJoin(hint("space", "start/stop"), hint("l", "lap"), hint("?", "help"))
 		default:
 			return hintJoin(hint("?", "help"))
 		}
@@ -247,6 +259,8 @@ func (m Model) contextualHints() string {
 		return hintJoin(hint("j/k", "select"), hint("e", "export JSON"), hint("?", "help"))
 	case TabSettings:
 		return hintJoin(hint("j/k", "select"), hint("+/-", "adjust"), hint("space", "toggle"), hint("?", "help"))
+	case TabStopwatch:
+		return hintJoin(hint("space", "start/stop"), hint("l", "lap"), hint("j/k", "scroll laps"), hint("r", "reset"), hint("w", "timer"), hint("?", "help"))
 	default:
 		return hintJoin(hint("j/k", "scroll"), hint("esc", "back"), hint("?", "help"))
 	}

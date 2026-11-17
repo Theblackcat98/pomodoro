@@ -15,6 +15,8 @@ type keyMap struct {
 	Resume     key.Binding
 	Skip       key.Binding
 	QuickStart key.Binding
+	Stopwatch  key.Binding
+	Lap        key.Binding
 	Add        key.Binding
 	Edit       key.Binding
 	Toggle     key.Binding
@@ -41,19 +43,22 @@ var keys = keyMap{
 	Resume:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "resume recovered session")),
 	Skip:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "skip")),
 	QuickStart: key.NewBinding(key.WithKeys("1", "2", "3"), key.WithHelp("1/2/3", "15/25/35 min")),
-	Add:        key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),
-	Edit:       key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
-	Toggle:     key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "toggle done")),
-	Delete:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
-	Archive:    key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "hide/show done")),
-	Filter:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter tasks")),
-	FocusTask:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "focus task")),
-	Nav:        key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "move")),
-	Adjust:     key.NewBinding(key.WithKeys("+", "-", "="), key.WithHelp("+/-", "adjust")),
-	ToggleSet:  key.NewBinding(key.WithKeys("space", "x", "enter"), key.WithHelp("space", "toggle")),
-	Scroll:     key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "scroll")),
-	Export:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export JSON (Stats)")),
-	Cancel:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+	// 's' is the timer's Skip key, so the stopwatch toggle uses 'w'.
+	Stopwatch: key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "stopwatch")),
+	Lap:       key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "lap (stopwatch)")),
+	Add:       key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),
+	Edit:      key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
+	Toggle:    key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "toggle done")),
+	Delete:    key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+	Archive:   key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "hide/show done")),
+	Filter:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter tasks")),
+	FocusTask: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "focus task")),
+	Nav:       key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "move")),
+	Adjust:    key.NewBinding(key.WithKeys("+", "-", "="), key.WithHelp("+/-", "adjust")),
+	ToggleSet: key.NewBinding(key.WithKeys("space", "x", "enter"), key.WithHelp("space", "toggle")),
+	Scroll:    key.NewBinding(key.WithKeys("j", "k", "up", "down"), key.WithHelp("j/k", "scroll")),
+	Export:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export JSON (Stats)")),
+	Cancel:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 }
 
 // bindings renders a "key action · key action" row from the given bindings.

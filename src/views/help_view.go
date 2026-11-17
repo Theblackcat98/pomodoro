@@ -34,6 +34,8 @@ func helpContent() string {
 		"",
 		section("Timer", []key.Binding{keys.StartPause, keys.Reset, keys.Resume, keys.Skip, keys.QuickStart}),
 		"",
+		section("Stopwatch", []key.Binding{keys.Stopwatch, keys.StartPause, keys.Reset, keys.Lap, keys.Scroll}),
+		"",
 		section("Tasks", []key.Binding{keys.Add, keys.Edit, keys.Toggle, keys.Delete, keys.Archive, keys.Filter, keys.FocusTask, keys.Nav}),
 		"",
 		section("Settings", []key.Binding{keys.Nav, keys.Adjust, keys.ToggleSet}),
