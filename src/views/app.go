@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/stopwatch"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -33,12 +34,13 @@ const (
 	TabStats
 	TabSettings
 	TabHelp
+	TabStopwatch
 )
 
 // tabCount must match the Tab constants above.
-const tabCount = 5
+const tabCount = 6
 
-var tabNames = []string{"Timer", "Tasks", "Stats", "Settings", "Help"}
+var tabNames = []string{"Timer", "Tasks", "Stats", "Settings", "Help", "Stopwatch"}
 
 // addField identifies the focused field in the new-task form.
 type addField int
@@ -165,6 +167,9 @@ type Model struct {
 	statsFiltering   bool
 	statsFilter      string // applied case-insensitive substring
 	statsFilterInput textinput.Model
+
+	// Stopwatch view state (issue #41): Bubbles engine + recorded laps.
+	stopwatch stopwatchState
 }
 
 // tabHit is the rendered column range of one header tab.
@@ -254,6 +259,7 @@ func NewModel(timer services.TimerService, store services.PersistenceService) Mo
 		),
 		help:         help.New(),
 		helpViewport: viewport.New(viewport.WithHeight(10)),
+		stopwatch:    newStopwatchState(),
 	}
 
 	titleInput := textinput.New()
@@ -477,6 +483,8 @@ func initialTab() Tab {
 		return TabSettings
 	case "help":
 		return TabHelp
+	case "stopwatch":
+		return TabStopwatch
 	}
 	return TabTimer
 }
@@ -632,6 +640,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq == m.toastSeq {
 			m.toast = ""
 		}
+
+	case stopwatch.StartStopMsg, stopwatch.ResetMsg, stopwatch.TickMsg:
+		// The Bubbles stopwatch owns its elapsed/running state; feed its
+		// messages back in so the tick chain stays armed. This runs even
+		// off the stopwatch tab, so leaving the view never stalls it.
+		var cmd tea.Cmd
+		m.stopwatch.engine, cmd = m.stopwatch.engine.Update(msg)
+		return m, tea.Batch(cmd, waitForEvent(m.events))
 	}
 
 	// Unhandled messages (e.g. the task list's async FilterMatchesMsg) go to
@@ -854,6 +870,12 @@ func (m *Model) handleMouseWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		var cmd tea.Cmd
 		m.helpViewport, cmd = m.helpViewport.Update(keyMsg)
 		return cmd
+	case TabStopwatch:
+		if button == tea.MouseWheelDown {
+			m.stopwatch.scroll(1)
+		} else {
+			m.stopwatch.scroll(-1)
+		}
 	}
 	return nil
 }
@@ -987,6 +1009,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.deleteArm = false
 		case m.tab == TabHelp:
 			m.tab = TabTimer
+		case m.tab == TabStopwatch:
+			m.tab = TabTimer
 		case m.tab == TabTasks && m.taskList.IsFiltering():
 			// The list's filter owns esc while it is active (cancels it).
 			return m, tea.Batch(m.taskList.Update(msg), waitForEvent(m.events))
@@ -996,6 +1020,17 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.tab = TabHelp
 		return m, waitForEvent(m.events)
+
+	case "w":
+		// Stopwatch view toggle. 's' is taken by the timer's Skip action, so
+		// the stopwatch uses 'w' rather than shadowing it.
+		target := TabStopwatch
+		if m.tab == TabStopwatch {
+			target = TabTimer
+		}
+		m.anim.tabSlide = tabSlideDir(m.tab, target)
+		m.tab = target
+		return m, tea.Batch(m.kickAnim(), waitForEvent(m.events))
 
 	case "tab":
 		next := (m.tab + 1) % tabCount
@@ -1048,6 +1083,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleSettingsKey(msg, key)
 	case TabHelp:
 		return m.handleHelpKey(msg, key)
+	case TabStopwatch:
+		return m.handleStopwatchKey(msg, key)
 	}
 
 	return m, waitForEvent(m.events)
@@ -1113,6 +1150,27 @@ func (m Model) handleTimerKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.startFocus(35*time.Minute), waitForEvent(m.events))
 	}
 
+	return m, waitForEvent(m.events)
+}
+
+// handleStopwatchKey drives the stopwatch view. Start/stop and reset go
+// through the Bubbles engine's commands; lap and scroll operate on the laps
+// slice. 's' is deliberately not used here (it is the timer's Skip key).
+func (m Model) handleStopwatchKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "space", "enter":
+		return m, tea.Batch(m.stopwatch.engine.Toggle(), waitForEvent(m.events))
+	case "r", "R":
+		m.stopwatch.clear()
+		return m, tea.Batch(m.stopwatch.engine.Reset(), waitForEvent(m.events))
+	case "l":
+		m.stopwatch.addLap()
+		return m, waitForEvent(m.events)
+	case "j", "down":
+		m.stopwatch.scroll(1)
+	case "k", "up":
+		m.stopwatch.scroll(-1)
+	}
 	return m, waitForEvent(m.events)
 }
 
